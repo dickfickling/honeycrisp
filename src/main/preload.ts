@@ -1,22 +1,12 @@
-import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+import { contextBridge, ipcRenderer } from 'electron';
 
 export type Channels = 'ipc-example';
 
 contextBridge.exposeInMainWorld('electron', {
-  sendKeypress: (key: string) => ipcRenderer.send('keyPress', key),
-  ipcRenderer: {
-    sendMessage(channel: Channels, args: unknown[]) {
-      ipcRenderer.send(channel, args);
-    },
-    on(channel: Channels, func: (...args: unknown[]) => void) {
-      const subscription = (_event: IpcRendererEvent, ...args: unknown[]) =>
-        func(...args);
-      ipcRenderer.on(channel, subscription);
-
-      return () => ipcRenderer.removeListener(channel, subscription);
-    },
-    once(channel: Channels, func: (...args: unknown[]) => void) {
-      ipcRenderer.once(channel, (_event, ...args) => func(...args));
-    },
-  },
-});
+  control: (command: string) => ipcRenderer.send('control', command),
+  scan: () => ipcRenderer.invoke('scan'),
+  beginPairing: (deviceId: string) =>
+    ipcRenderer.invoke('beginPairing', deviceId),
+  finishPairing: (deviceId: string, deviceName: string, pin?: number) =>
+    ipcRenderer.invoke('finishPairing', deviceId, deviceName, pin),
+} as Window['electron']);

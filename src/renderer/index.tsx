@@ -2,17 +2,32 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 
 const container = document.getElementById('root')!;
+const query = new URLSearchParams(window.location.search);
 const root = createRoot(container);
-root.render(<App />);
+const initialRoute = `/${query.get('initialRoute') || ''}`;
+root.render(<App initialRoute={initialRoute} />);
 
-// calling IPC exposed from preload script
-window.electron.ipcRenderer.once('ipc-example', (arg) => {
-  // eslint-disable-next-line no-console
-  console.log(arg);
-});
-window.electron.ipcRenderer.sendMessage('ipc-example', ['ping']);
+const keyToCommand = {
+  ArrowUp: 'up',
+  ArrowDown: 'down',
+  ArrowLeft: 'left',
+  ArrowRight: 'right',
+  Backspace: 'menu',
+  h: 'home_hold',
+  Enter: 'select',
+  ' ': 'select',
+  '[': 'volume_down',
+  ']': 'volume_up',
+};
 
-document.addEventListener('keydown', (event) => {
-  console.log(event);
-  window.electron.sendKeypress(event.key);
-});
+function isObjKey<T>(key: PropertyKey, obj: T): key is keyof T {
+  return key in obj;
+}
+
+if (initialRoute === '/') {
+  document.addEventListener('keydown', (event) => {
+    if (isObjKey(event.key, keyToCommand)) {
+      window.electron.control(keyToCommand[event.key]);
+    }
+  });
+}

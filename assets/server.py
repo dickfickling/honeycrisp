@@ -10,6 +10,52 @@ async def scan(request):
     return web.Response(text="Hello world!")
 
 
+@routes.get('/pair/{id}/begin')
+async def beginPairing(request):
+    loop = asyncio.get_event_loop()
+    device_id = request.match_info["id"]
+    results = await pyatv.scan(identifier=device_id, loop=loop)
+    pairing = await pyatv.pair(results[0], protocol=pyatv.Protocol.AirPlay, loop=loop)
+    request.app["pairings"][device_id] = pairing
+    await pairing.begin()
+
+    if pairing.device_provides_pin:
+        return web.json_response({
+            "device_provides_pin": True,
+        })
+    else:
+        pairing.pin(1234)
+        return web.json_response({
+            "device_provides_pin": False,
+            "pin_to_enter": 1234,
+        })
+
+
+@routes.get('/pair/{id}/finish')
+async def finishPairing(request):
+    loop = asyncio.get_event_loop()
+    device_id = request.match_info["id"]
+    if device_id not in request.app["pairings"]:
+        return web.json_response({
+            "has_paired": False,
+            "error": "Pairing not started"
+        })
+
+    pairing = request.app["pairings"][device_id]
+
+    if pairing.device_provides_pin:
+        pin = request.query["pin"]
+        pairing.pin(pin)
+
+    await pairing.finish()
+    await pairing.close()
+
+    return web.json_response({
+        "has_paired": pairing.has_paired,
+        "credentials": pairing.service.credentials
+    })
+
+
 @routes.get('/scan')
 async def scan(request):
     devices = []
@@ -94,6 +140,7 @@ async def on_startup(app: web.Application) -> None:
 def main():
     app = web.Application()
     app["atv"] = {}
+    app["pairings"] = {}
     app.add_routes(routes)
     app.on_shutdown.append(on_shutdown)
     app.on_startup.append(on_startup)

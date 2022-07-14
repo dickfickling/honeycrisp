@@ -1,31 +1,27 @@
 /* eslint global-require: off, no-console: off, promise/always-return: off */
 
-/**
- * This module executes inside of electron's main process. You can start
- * electron renderer process from here and communicate with the other processes
- * through IPC.
- *
- * When running `npm run build` or `npm run build:main`, this file is compiled to
- * `./src/main.js` using webpack. This gives us some performance wins.
- */
 import path from 'path';
 import { app, BrowserWindow, ipcMain, Menu, nativeTheme, Tray } from 'electron';
-import { resolveHtmlPath } from './util';
-import { start, stop, keyPressed, DeviceName } from './server';
-import { getAssetPath } from './utils';
+import { resolveHtmlPath, getAssetPath } from './util';
+import { start, control, scan, beginPairing, finishPairing } from './server';
+import { getCredentials } from './credentials';
 
 let mainWindow: BrowserWindow | null = null;
-let activeDevice: DeviceName = 'livingRoom';
+let activeDeviceId = '50:DE:06:78:39:B6';
 
-ipcMain.on('ipc-example', async (event, arg) => {
-  const msgTemplate = (pingPong: string) => `IPC test: ${pingPong}`;
-  console.log(msgTemplate(arg));
-  event.reply('ipc-example', msgTemplate('pong'));
+ipcMain.on('control', (_event, command) => {
+  control(activeDeviceId, command);
 });
 
-ipcMain.on('keyPress', (_event, key) => {
-  keyPressed(activeDevice, key);
-});
+ipcMain.handle('scan', () => scan());
+ipcMain.handle('beginPairing', (_event, deviceId: string) =>
+  beginPairing(deviceId)
+);
+ipcMain.handle(
+  'finishPairing',
+  (_event, deviceId: string, deviceName: string, pin?: number) =>
+    finishPairing(deviceId, deviceName, pin)
+);
 
 if (process.env.NODE_ENV === 'production') {
   const sourceMapSupport = require('source-map-support');
@@ -83,6 +79,28 @@ const createWindow = async () => {
   return win;
 };
 
+const createAddDeviceWindow = async () => {
+  if (isDebug) {
+    await installExtensions();
+  }
+
+  const win = new BrowserWindow({
+    width: 500,
+    height: 500,
+    backgroundColor: 'black',
+    icon: getAssetPath('icon.png'),
+    webPreferences: {
+      preload: app.isPackaged
+        ? path.join(__dirname, 'preload.js')
+        : path.join(__dirname, '../../.erb/dll/preload.js'),
+    },
+  });
+
+  win.loadURL(resolveHtmlPath('index.html', '?initialRoute=addDevice'));
+
+  return win;
+};
+
 app.on('window-all-closed', (e: Electron.Event) => e.preventDefault());
 app.dock.hide();
 
@@ -91,15 +109,14 @@ app
   .then(() => {
     const tray = new Tray(getCurrentTrayIcon());
     tray.setToolTip('Click me.');
+    start();
 
     tray.addListener('click', async () => {
       if (mainWindow) {
         mainWindow.close();
       } else {
-        start();
         mainWindow = await createWindow();
         mainWindow.on('close', () => {
-          stop();
           mainWindow = null;
         });
         // TODO: re-enable this when not developing
@@ -112,25 +129,29 @@ app
     });
 
     tray.on('right-click', () => {
+      const credentials = getCredentials();
       tray.popUpContextMenu(
         Menu.buildFromTemplate([
           {
             label: 'Device',
             submenu: [
+              ...Object.entries(credentials).map(([id, value]) => {
+                return {
+                  label: value.name,
+                  type: 'radio',
+                  checked: activeDeviceId === id,
+                  click() {
+                    activeDeviceId = id;
+                  },
+                } as const;
+              }),
               {
-                label: 'Living Room',
-                type: 'radio',
-                checked: activeDevice === 'livingRoom',
-                click() {
-                  activeDevice = 'livingRoom';
-                },
+                type: 'separator',
               },
               {
-                label: 'Bedroom',
-                type: 'radio',
-                checked: activeDevice === 'bedroom',
+                label: 'Add Device',
                 click() {
-                  activeDevice = 'bedroom';
+                  createAddDeviceWindow();
                 },
               },
             ],

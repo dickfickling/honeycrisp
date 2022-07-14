@@ -1,24 +1,25 @@
-import { ButtonHTMLAttributes } from 'react';
+import React, { ButtonHTMLAttributes, useEffect, useState } from 'react';
 import { MemoryRouter as Router, Routes, Route } from 'react-router-dom';
 import 'tailwindcss/tailwind.css';
 
-const RoundedButton: React.FC<ButtonHTMLAttributes<HTMLButtonElement>> = (
-  props
-) => {
+const RoundedButton: React.FC<ButtonHTMLAttributes<HTMLButtonElement>> = ({
+  className,
+  ...rest
+}) => {
   return (
     <button
       type="button"
-      {...props}
+      {...rest}
       className={`rounded-full border border-white m-2 h-20 w-20 text-white ${
-        props.className || ''
+        className || ''
       }`}
     />
   );
 };
 
 const Remote = () => {
-  const handlePressButton = (button: string) => {
-    window.electron.sendKeypress(button);
+  const handlePressButton = (command: string) => {
+    window.electron.control(command);
   };
 
   return (
@@ -27,7 +28,7 @@ const Remote = () => {
         <button
           type="button"
           className="flex-1 w-full"
-          onClick={() => handlePressButton('ArrowUp')}
+          onClick={() => handlePressButton('up')}
         >
           ^
         </button>
@@ -35,21 +36,21 @@ const Remote = () => {
           <button
             type="button"
             className="flex-1"
-            onClick={() => handlePressButton('ArrowLeft')}
+            onClick={() => handlePressButton('left')}
           >
             {'<'}
           </button>
           <button
             type="button"
             className="flex-1"
-            onClick={() => handlePressButton('Enter')}
+            onClick={() => handlePressButton('select')}
           >
             o
           </button>
           <button
             type="button"
             className="flex-1"
-            onClick={() => handlePressButton('ArrowRight')}
+            onClick={() => handlePressButton('right')}
           >
             {'>'}
           </button>
@@ -57,34 +58,36 @@ const Remote = () => {
         <button
           type="button"
           className="flex-1 w-full"
-          onClick={() => handlePressButton('ArrowDown')}
+          onClick={() => handlePressButton('down')}
         >
           v
         </button>
       </div>
       <div className="flex flex-row">
-        <RoundedButton onClick={() => handlePressButton('Backspace')}>
+        <RoundedButton onClick={() => handlePressButton('menu')}>
           Menu
         </RoundedButton>
-        <RoundedButton>Home</RoundedButton>
+        <RoundedButton onClick={() => handlePressButton('home_hold')}>
+          Home
+        </RoundedButton>
       </div>
       <div className="flex flex-row">
         <div className="flex flex-col">
-          <RoundedButton onClick={() => handlePressButton('Enter')}>
+          <RoundedButton onClick={() => handlePressButton('select')}>
             Select
           </RoundedButton>
         </div>
         <div className="flex flex-col border rounded-full border-white m-2">
           <button
             type="button"
-            onClick={() => handlePressButton(']')}
+            onClick={() => handlePressButton('volume_up')}
             className="text-white h-20 w-20 text-xl"
           >
             +
           </button>
           <button
             type="button"
-            onClick={() => handlePressButton('[')}
+            onClick={() => handlePressButton('volume_down')}
             className="text-white h-20 w-20 text-xl"
           >
             -
@@ -95,12 +98,86 @@ const Remote = () => {
   );
 };
 
-export default function App() {
+const AddDevice = () => {
+  const [devices, setDevices] = useState<Array<{
+    name: string;
+    id: string;
+  }> | null>(null);
+
+  const [pairingDevice, setPairingDevice] = useState<{
+    name: string;
+    id: string;
+  } | null>();
+  const [pin, setPin] = useState('');
+
+  useEffect(() => {
+    const scan = async () => {
+      const results = await window.electron.scan();
+      setDevices(results);
+    };
+
+    scan();
+  }, []);
+
+  const handlePinChange = (evt: React.ChangeEvent<HTMLInputElement>) => {
+    setPin(evt.target.value);
+  };
+
+  const handlePressPair = async () => {
+    const result = await window.electron.finishPairing(
+      pairingDevice!.id,
+      pairingDevice!.name,
+      parseInt(pin, 10)
+    );
+  };
+
   return (
-    <Router>
+    <div className="text-white">
+      {devices ? (
+        devices.map((d) => {
+          const handleDeviceClick = async () => {
+            setPairingDevice(d);
+            await window.electron.beginPairing(d.id);
+          };
+
+          return (
+            <div key={d.id}>
+              <button type="button" onClick={handleDeviceClick}>
+                {d.name}
+              </button>
+            </div>
+          );
+        })
+      ) : (
+        <div>scanning...</div>
+      )}
+      {pairingDevice ? (
+        <div>
+          <input
+            className="bg-transparent"
+            type="text"
+            value={pin}
+            onChange={handlePinChange}
+          />
+          <button type="button" onClick={handlePressPair}>
+            pair
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+type AppProps = { initialRoute: string };
+const App: React.FC<AppProps> = ({ initialRoute }) => {
+  return (
+    <Router initialEntries={[initialRoute]}>
       <Routes>
         <Route path="/" element={<Remote />} />
+        <Route path="/addDevice" element={<AddDevice />} />
       </Routes>
     </Router>
   );
-}
+};
+
+export default App;
