@@ -19,8 +19,10 @@ ipcMain.handle('beginPairing', (_event, deviceId: string) =>
 );
 ipcMain.handle(
   'finishPairing',
-  (_event, deviceId: string, deviceName: string, pin?: number) =>
-    finishPairing(deviceId, deviceName, pin)
+  async (_event, deviceId: string, deviceName: string, pin?: number) => {
+    await finishPairing(deviceId, deviceName, pin);
+    activeDeviceId = deviceId;
+  }
 );
 
 if (process.env.NODE_ENV === 'production') {
@@ -51,9 +53,9 @@ const installExtensions = async () => {
 
 const getCurrentTrayIcon = () => {
   if (nativeTheme.shouldUseDarkColors) {
-    return getAssetPath('joystick.small.white.png');
+    return getAssetPath('remote.dark.png');
   }
-  return getAssetPath('joystick.small.png');
+  return getAssetPath('remote.light.png');
 };
 
 const createWindow = async () => {
@@ -65,7 +67,7 @@ const createWindow = async () => {
     width: 200,
     height: 500,
     frame: false,
-    backgroundColor: 'black',
+    backgroundColor: '#101012',
     icon: getAssetPath('icon.png'),
     webPreferences: {
       preload: app.isPackaged
@@ -85,9 +87,9 @@ const createAddDeviceWindow = async () => {
   }
 
   const win = new BrowserWindow({
-    width: 500,
-    height: 500,
-    backgroundColor: 'black',
+    width: 400,
+    height: 400,
+    backgroundColor: '#101012',
     icon: getAssetPath('icon.png'),
     webPreferences: {
       preload: app.isPackaged
