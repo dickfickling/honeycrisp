@@ -70,7 +70,7 @@ const createWindow = async () => {
     await installExtensions();
   }
 
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 200,
     height: 500,
     frame: false,
@@ -83,9 +83,13 @@ const createWindow = async () => {
     },
   });
 
-  win.loadURL(resolveHtmlPath('index.html'));
+  mainWindow.loadURL(resolveHtmlPath('index.html'));
 
-  return win;
+  mainWindow.on('close', () => {
+    mainWindow = null;
+  });
+
+  mainWindow.on('blur', mainWindow.close);
 };
 
 const createAddDeviceWindow = async () => {
@@ -107,32 +111,29 @@ const createAddDeviceWindow = async () => {
 
   win.loadURL(resolveHtmlPath('index.html', '?initialRoute=addDevice'));
 
-  return win;
+  win.on('closed', () => {
+    createWindow();
+  });
 };
 
 app.on('window-all-closed', (e: Electron.Event) => e.preventDefault());
-app.dock.hide();
 app.on('will-quit', () => stop());
+app.dock.hide();
 
 app
   .whenReady()
-  .then(() => {
+  .then(async () => {
+    await start();
     const tray = new Tray(getCurrentTrayIcon());
     tray.setToolTip('Click me.');
-    start();
 
-    tray.addListener('click', async () => {
+    tray.addListener('click', () => {
       if (!activeDeviceId) {
         createAddDeviceWindow();
       } else if (mainWindow) {
         mainWindow.close();
       } else {
-        mainWindow = await createWindow();
-        mainWindow.on('close', () => {
-          mainWindow = null;
-        });
-        // TODO: re-enable this when not developing
-        mainWindow.on('blur', mainWindow.close);
+        createWindow();
       }
     });
 
@@ -177,5 +178,9 @@ app
         ])
       );
     });
+
+    if (!activeDeviceId) {
+      createAddDeviceWindow();
+    }
   })
   .catch(console.log);

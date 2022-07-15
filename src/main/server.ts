@@ -16,24 +16,28 @@ const connect = async (deviceId: string) => {
 };
 
 export const start = () => {
-  console.log('Starting Python...');
-  spawned = spawn(PYTHON_BINARY);
-  spawned.on('error', (error) => {
-    console.error('Python spawn error:', error);
-  });
-  spawned.stdout.on('data', (chunk) => {
-    if (chunk instanceof Buffer) {
-      const stringified = chunk.toString();
-      process.stdout.write(`Python: ${stringified}`);
-      if (stringified.includes('listening')) {
-        setTimeout(async () => {
-          const credentials = getCredentials();
-          await Promise.all(
-            Object.keys(credentials).map(async (id) => connect(id))
-          );
-        }, 200);
+  return new Promise<void>((resolve, reject) => {
+    console.log('Starting Python...');
+    spawned = spawn(PYTHON_BINARY);
+    spawned.on('error', (error) => {
+      console.error('Python spawn error:', error);
+      reject(error);
+    });
+    spawned.stdout.on('data', (chunk) => {
+      if (chunk instanceof Buffer) {
+        const stringified = chunk.toString();
+        process.stdout.write(`Python: ${stringified}`);
+        if (stringified.includes('listening')) {
+          setTimeout(async () => {
+            const credentials = getCredentials();
+            await Promise.all(
+              Object.keys(credentials).map(async (id) => connect(id))
+            );
+            resolve();
+          }, 200);
+        }
       }
-    }
+    });
   });
 };
 
