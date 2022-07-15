@@ -6,14 +6,13 @@ import { getAssetPath } from './util';
 const PYTHON_BINARY = getAssetPath('dist/server');
 
 let spawned: ChildProcessWithoutNullStreams | null = null;
-let ready = false;
 
 const connect = async (deviceId: string) => {
   const credentials = getCredentials();
-  await axios(
+  const result = await axios(
     `http://localhost:22000/connect/${deviceId}?airplay=${credentials[deviceId].key}`
   );
-  console.log('Connected to ', deviceId);
+  console.log(result.data);
 };
 
 export const start = () => {
@@ -32,7 +31,6 @@ export const start = () => {
           await Promise.all(
             Object.keys(credentials).map(async (id) => connect(id))
           );
-          ready = true;
         }, 200);
       }
     }
@@ -42,7 +40,6 @@ export const start = () => {
 export const stop = () => {
   spawned?.kill();
   spawned = null;
-  ready = false;
 };
 
 export type RemoteCommand =
@@ -56,10 +53,22 @@ export type RemoteCommand =
   | 'volume_up'
   | 'volume_down';
 
-export const control = async (deviceId: string, command: RemoteCommand) => {
-  if (ready) {
+export const control = async (
+  deviceId: string,
+  command: RemoteCommand,
+  autoRetry = true
+) => {
+  const result: AxiosResponse<{ success: boolean; error: string }> =
     await axios(`http://localhost:22000/remote_control/${deviceId}/${command}`);
+  if (
+    result.data.success === false &&
+    result.data.error === 'not_connected' &&
+    autoRetry
+  ) {
+    await connect(deviceId);
+    await control(deviceId, command, false);
   }
+  console.log(result.data);
 };
 
 export const scan = async (): Promise<Array<{ name: string; id: string }>> => {

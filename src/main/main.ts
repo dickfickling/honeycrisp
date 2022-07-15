@@ -3,7 +3,14 @@
 import path from 'path';
 import { app, BrowserWindow, ipcMain, Menu, nativeTheme, Tray } from 'electron';
 import { resolveHtmlPath, getAssetPath } from './util';
-import { start, control, scan, beginPairing, finishPairing } from './server';
+import {
+  start,
+  control,
+  scan,
+  beginPairing,
+  finishPairing,
+  stop,
+} from './server';
 import { getCredentials } from './credentials';
 
 let mainWindow: BrowserWindow | null = null;
@@ -105,6 +112,7 @@ const createAddDeviceWindow = async () => {
 
 app.on('window-all-closed', (e: Electron.Event) => e.preventDefault());
 app.dock.hide();
+app.on('will-quit', () => stop());
 
 app
   .whenReady()

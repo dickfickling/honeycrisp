@@ -13,17 +13,9 @@ const DEFAULT_CREDENTIALS: { [key: string]: { name: string; key: string } } = {
   //  },
 };
 
-let credentials: typeof DEFAULT_CREDENTIALS;
-if (!fs.existsSync(CREDENTIALS_FILE)) {
-  credentials = DEFAULT_CREDENTIALS;
-  fs.writeFileSync(
-    CREDENTIALS_FILE,
-    JSON.stringify(DEFAULT_CREDENTIALS),
-    'utf8'
-  );
-} else {
-  credentials = JSON.parse(fs.readFileSync(CREDENTIALS_FILE, 'utf8'));
-}
+let credentials: typeof DEFAULT_CREDENTIALS = JSON.parse(
+  fs.readFileSync(CREDENTIALS_FILE, 'utf8')
+);
 
 export const getCredentials = () => {
   return credentials;

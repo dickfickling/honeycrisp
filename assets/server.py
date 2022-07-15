@@ -6,8 +6,8 @@ routes = web.RouteTableDef()
 
 
 @routes.get('/')
-async def scan(request):
-    return web.Response(text="Hello world!")
+async def alive(request):
+    return web.json_response({"ok": "honeycrisp"})
 
 
 @routes.get('/pair/{id}/begin')
@@ -77,39 +77,20 @@ async def connect(request):
     loop = asyncio.get_event_loop()
     device_id = request.match_info["id"]
 
-    if device_id in request.app["atv"]:
-        return web.Response(text=f"Already connected to {device_id}")
-
     results = await pyatv.scan(identifier=device_id, loop=loop)
     if not results:
-        return web.Response(text="Device not found", status=500)
+        return web.json_response({"connected": False, "error": "device_not_found"})
 
     add_credentials(results[0], request.query)
 
     try:
         atv = await pyatv.connect(results[0], loop=loop)
     except Exception as ex:
-        return web.Response(text=f"Failed to connect to device: {ex}", status=500)
+        return web.json_response({"connected": False, "error": getattr(ex, 'message', repr(ex))})
 
     request.app["atv"][device_id] = atv
 
-    return web.Response(text=f"Connected to device {device_id}")
-
-
-@routes.get("/volume/{id}/{command}")
-async def volume(request):
-    device_id = request.match_info["id"]
-    atv = request.app["atv"][device_id]
-
-    if not atv:
-        return web.Response(text=f"Not connected to {device_id}", status=500)
-
-    try:
-        await getattr(atv.audio, request.match_info["command"])()
-    except Exception as ex:
-        return web.Response(text=f"Remote control command failed: {ex}")
-
-    return web.Response(text="OK")
+    return web.json_response({"connected": True})
 
 
 @routes.get("/remote_control/{id}/{command}")
@@ -118,14 +99,16 @@ async def remote_control(request):
     atv = request.app["atv"][device_id]
 
     if not atv:
-        return web.Response(text=f"Not connected to {device_id}", status=500)
+        return web.json_response({"success": False, "error": "not_connected"})
 
     try:
         await getattr(atv.remote_control, request.match_info["command"])()
+    except pyatv.exceptions.BlockedStateError as ex:
+        return web.json_response({"success": False, "error": "not_connected"})
     except Exception as ex:
-        return web.Response(text=f"Remote control command failed: {ex}")
+        return web.json_response({"success": False, "error": getattr(ex, 'message', repr(ex))})
 
-    return web.Response(text="OK")
+    return web.json_response({"success": True})
 
 
 async def on_shutdown(app: web.Application) -> None:
