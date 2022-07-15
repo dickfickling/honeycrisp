@@ -7,7 +7,7 @@ import { start, control, scan, beginPairing, finishPairing } from './server';
 import { getCredentials } from './credentials';
 
 let mainWindow: BrowserWindow | null = null;
-let activeDeviceId = '50:DE:06:78:39:B6';
+let activeDeviceId = Object.keys(getCredentials())[0];
 
 ipcMain.on('control', (_event, command) => {
   control(activeDeviceId, command);
@@ -114,7 +114,9 @@ app
     start();
 
     tray.addListener('click', async () => {
-      if (mainWindow) {
+      if (!activeDeviceId) {
+        createAddDeviceWindow();
+      } else if (mainWindow) {
         mainWindow.close();
       } else {
         mainWindow = await createWindow();

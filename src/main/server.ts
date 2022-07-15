@@ -8,6 +8,14 @@ const PYTHON_BINARY = getAssetPath('dist/server');
 let spawned: ChildProcessWithoutNullStreams | null = null;
 let ready = false;
 
+const connect = async (deviceId: string) => {
+  const credentials = getCredentials();
+  await axios(
+    `http://localhost:22000/connect/${deviceId}?airplay=${credentials[deviceId].key}`
+  );
+  console.log('Connected to ', deviceId);
+};
+
 export const start = () => {
   console.log('Starting Python...');
   spawned = spawn(PYTHON_BINARY);
@@ -22,12 +30,7 @@ export const start = () => {
         setTimeout(async () => {
           const credentials = getCredentials();
           await Promise.all(
-            Object.entries(credentials).map(async ([id, value]) => {
-              await axios(
-                `http://localhost:22000/connect/${id}?airplay=${value.key}`
-              );
-              console.log('Connected to ', id);
-            })
+            Object.keys(credentials).map(async (id) => connect(id))
           );
           ready = true;
         }, 200);
@@ -92,6 +95,7 @@ export const finishPairing = async (
       name: deviceName,
     };
     updateCredentials(credentials);
+    await connect(deviceId);
   }
   return response.data;
 };
