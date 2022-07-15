@@ -68,7 +68,7 @@ const createWindow = async () => {
     height: 500,
     frame: false,
     backgroundColor: '#101012',
-    icon: getAssetPath('icon.png'),
+    icon: getAssetPath('remote.light.png'),
     webPreferences: {
       preload: app.isPackaged
         ? path.join(__dirname, 'preload.js')
@@ -90,7 +90,7 @@ const createAddDeviceWindow = async () => {
     width: 400,
     height: 400,
     backgroundColor: '#101012',
-    icon: getAssetPath('icon.png'),
+    icon: getAssetPath('remote.light.png'),
     webPreferences: {
       preload: app.isPackaged
         ? path.join(__dirname, 'preload.js')
