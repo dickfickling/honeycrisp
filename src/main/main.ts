@@ -15,6 +15,7 @@ import { getCredentials } from './credentials';
 
 let mainWindow: BrowserWindow | null = null;
 let activeDeviceId = Object.keys(getCredentials())[0];
+let bounds: Electron.Rectangle | null = null;
 
 ipcMain.on('control', (_event, command) => {
   control(activeDeviceId, command);
@@ -71,8 +72,10 @@ const createWindow = async () => {
   }
 
   mainWindow = new BrowserWindow({
-    width: 200,
-    height: 500,
+    width: bounds?.width || 200,
+    height: bounds?.height || 500,
+    x: bounds?.x,
+    y: bounds?.y,
     frame: false,
     backgroundColor: 'rgb(156,163,175)',
     icon: getAssetPath('remote.light.png'),
@@ -86,6 +89,7 @@ const createWindow = async () => {
   mainWindow.loadURL(resolveHtmlPath('index.html'));
 
   mainWindow.on('close', () => {
+    bounds = mainWindow!.getBounds();
     mainWindow = null;
   });
 
