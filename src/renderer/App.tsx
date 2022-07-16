@@ -18,6 +18,8 @@ const RoundedButton: React.FC<ButtonHTMLAttributes<HTMLButtonElement>> = ({
   );
 };
 
+const Dot = () => <div className="h-1 w-1 rounded-full bg-white" />;
+
 const Remote = () => {
   const handleRemoteButton = (command: string) => {
     window.electron.control(command);
@@ -35,18 +37,18 @@ const Remote = () => {
       <div className="rounded-full overflow-hidden bg-gray-900 h-40 w-40 grid grid-cols-4 grid-rows-4 mt-2">
         <button
           type="button"
-          className="col-span-4"
+          className="col-span-4 flex pt-2 justify-center"
           onClick={() => handleRemoteButton('up')}
         >
-          .
+          <Dot />
         </button>
         <div className="col-span-4 row-span-2 grid grid-cols-4">
           <button
             type="button"
-            className=""
+            className="flex items-center pl-2"
             onClick={() => handleRemoteButton('left')}
           >
-            .
+            <Dot />
           </button>
           <button
             type="button"
@@ -57,18 +59,18 @@ const Remote = () => {
           </button>
           <button
             type="button"
-            className=""
+            className="flex justify-end items-center pr-2"
             onClick={() => handleRemoteButton('right')}
           >
-            .
+            <Dot />
           </button>
         </div>
         <button
           type="button"
-          className="col-span-4"
+          className="col-span-4 flex justify-center items-end pb-2"
           onClick={() => handleRemoteButton('down')}
         >
-          .
+          <Dot />
         </button>
       </div>
       <div className="flex flex-row">
