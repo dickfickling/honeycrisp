@@ -87,6 +87,7 @@
     "axios": "^0.27.2",
     "electron-debug": "^3.2.0",
     "electron-log": "^4.4.7",
+    "electron-store": "^8.0.2",
     "electron-updater": "^5.0.3",
     "lodash": "^4.17.21",
     "react": "^18.1.0",
@@ -172,8 +173,7 @@
     "files": [
       "dist",
       "node_modules",
-      "package.json",
-      "assets/credentials.json"
+      "package.json"
     ],
     "afterSign": ".erb/scripts/notarize.js",
     "mac": {

@@ -183,7 +183,9 @@ app
       );
     });
 
-    if (!activeDeviceId) {
+    if (activeDeviceId) {
+      createWindow();
+    } else {
       createAddDeviceWindow();
     }
   })
