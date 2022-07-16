@@ -1,6 +1,7 @@
 import React, { ButtonHTMLAttributes, useEffect, useState } from 'react';
 import { MemoryRouter as Router, Routes, Route } from 'react-router-dom';
 import 'tailwindcss/tailwind.css';
+import './css/all.css';
 
 const RoundedButton: React.FC<ButtonHTMLAttributes<HTMLButtonElement>> = ({
   className,
@@ -10,7 +11,7 @@ const RoundedButton: React.FC<ButtonHTMLAttributes<HTMLButtonElement>> = ({
     <button
       type="button"
       {...rest}
-      className={`rounded-full border m-2 h-20 w-20 text-white ${
+      className={`bg-gray-900 rounded-full m-2 h-20 w-20 text-white ${
         className || ''
       }`}
     />
@@ -18,79 +19,87 @@ const RoundedButton: React.FC<ButtonHTMLAttributes<HTMLButtonElement>> = ({
 };
 
 const Remote = () => {
-  const handlePressButton = (command: string) => {
+  const handleRemoteButton = (command: string) => {
     window.electron.control(command);
   };
 
   return (
-    <div className="bg-darkGray text-white h-screen flex flex-col items-center pt-8">
-      <div className="rounded-full border h-40 w-40 flex flex-col items-center justify-between">
+    <div className="bg-gray-400 text-white h-screen flex flex-col items-center">
+      <button
+        type="button"
+        className="rounded-full border border-gray-900 text-gray-900 h-8 w-8 self-end mt-4 mr-4"
+        onClick={() => handleRemoteButton('power_toggle')}
+      >
+        <i className="far fa-power-off" />
+      </button>
+      <div className="rounded-full overflow-hidden bg-gray-900 h-40 w-40 grid grid-cols-4 grid-rows-4 mt-2">
         <button
           type="button"
-          className="flex-1 w-full"
-          onClick={() => handlePressButton('up')}
+          className="col-span-4"
+          onClick={() => handleRemoteButton('up')}
         >
-          ^
+          .
         </button>
-        <div className="flex flex-row flex-1 w-full">
+        <div className="col-span-4 row-span-2 grid grid-cols-4">
           <button
             type="button"
-            className="flex-1"
-            onClick={() => handlePressButton('left')}
+            className=""
+            onClick={() => handleRemoteButton('left')}
           >
-            {'<'}
+            .
           </button>
           <button
             type="button"
-            className="flex-1"
-            onClick={() => handlePressButton('select')}
+            className="col-span-2 rounded-full border border-gray-600"
+            onClick={() => handleRemoteButton('select')}
           >
-            o
+            {' '}
           </button>
           <button
             type="button"
-            className="flex-1"
-            onClick={() => handlePressButton('right')}
+            className=""
+            onClick={() => handleRemoteButton('right')}
           >
-            {'>'}
+            .
           </button>
         </div>
         <button
           type="button"
-          className="flex-1 w-full"
-          onClick={() => handlePressButton('down')}
+          className="col-span-4"
+          onClick={() => handleRemoteButton('down')}
         >
-          v
+          .
         </button>
       </div>
       <div className="flex flex-row">
-        <RoundedButton onClick={() => handlePressButton('menu')}>
-          Menu
+        <RoundedButton onClick={() => handleRemoteButton('menu')}>
+          <i className="fal fa-chevron-left text-2xl" />
         </RoundedButton>
-        <RoundedButton onClick={() => handlePressButton('home_hold')}>
-          Home
+        <RoundedButton onClick={() => handleRemoteButton('home_hold')}>
+          <i className="fal fa-tv" />
         </RoundedButton>
       </div>
       <div className="flex flex-row">
         <div className="flex flex-col">
-          <RoundedButton onClick={() => handlePressButton('select')}>
-            Select
+          <RoundedButton onClick={() => handleRemoteButton('play_pause')}>
+            <i className="fal fa-play text-lg" />{' '}
+            <i className="fal fa-pause text-lg" />
           </RoundedButton>
         </div>
-        <div className="flex flex-col border rounded-full m-2">
+        <div className="flex flex-col bg-gray-900 rounded-full m-2">
           <button
             type="button"
-            onClick={() => handlePressButton('volume_up')}
-            className="text-white h-20 w-20 text-xl"
+            onClick={() => handleRemoteButton('volume_up')}
+            className="text-white h-20 w-20"
           >
-            +
+            <i className="fal fa-plus text-xl" />
           </button>
           <button
             type="button"
-            onClick={() => handlePressButton('volume_down')}
-            className="text-white h-20 w-20 text-xl"
+            onClick={() => handleRemoteButton('volume_down')}
+            className="text-white h-20 w-20"
           >
-            -
+            <i className="fal fa-minus text-xl" />
           </button>
         </div>
       </div>
@@ -126,7 +135,8 @@ const AddDevice = () => {
     setPin(evt.target.value.replace(/\D+/g, '').substring(0, 4));
   };
 
-  const handlePressPair = async () => {
+  const handlePinSubmit = async (evt: React.FormEvent) => {
+    evt.preventDefault();
     await window.electron.finishPairing(
       pairingDevice!.id,
       pairingDevice!.name,
@@ -182,20 +192,18 @@ const AddDevice = () => {
       )}
       {pairing ? (
         <div className="inline-block rounded-full border mt-4">
-          <input
-            className="bg-transparent outline-none px-4"
-            placeholder="Enter the PIN on your TV"
-            type="text"
-            value={pin}
-            onChange={handlePinChange}
-          />
-          <button
-            className="rounded-full border py-2 px-4"
-            type="button"
-            onClick={handlePressPair}
-          >
-            Pair
-          </button>
+          <form onSubmit={handlePinSubmit}>
+            <input
+              className="bg-transparent outline-none px-4"
+              placeholder="Enter the PIN on your TV"
+              type="text"
+              value={pin}
+              onChange={handlePinChange}
+            />
+            <button className="rounded-full border py-2 px-4" type="submit">
+              Pair
+            </button>
+          </form>
         </div>
       ) : null}
       {paired ? (

@@ -180,7 +180,8 @@
       "target": {
         "target": "default",
         "arch": [
-          "arm64"
+          "arm64",
+          "x64"
         ]
       },
       "type": "distribution",

@@ -102,7 +102,13 @@ async def remote_control(request):
         return web.json_response({"success": False, "error": "not_connected"})
 
     try:
-        await getattr(atv.remote_control, request.match_info["command"])()
+        if request.match_info["command"] == 'power_toggle':
+            if atv.power.power_state == atv.power.power_state.On:
+                await atv.power.turn_off()
+            else:
+                await atv.power.turn_on()
+        else:
+            await getattr(atv.remote_control, request.match_info["command"])()
     except pyatv.exceptions.BlockedStateError as ex:
         return web.json_response({"success": False, "error": "not_connected"})
     except Exception as ex:

@@ -74,7 +74,7 @@ const createWindow = async () => {
     width: 200,
     height: 500,
     frame: false,
-    backgroundColor: '#101012',
+    backgroundColor: 'rgb(156,163,175)',
     icon: getAssetPath('remote.light.png'),
     webPreferences: {
       preload: app.isPackaged
