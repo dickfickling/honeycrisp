@@ -26,7 +26,12 @@ const Remote = () => {
   };
 
   return (
-    <div className="bg-gray-400 text-white h-screen flex flex-col items-center">
+    <div
+      className="bg-gray-400 text-white h-screen flex flex-col items-center"
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      style={{ webkitAppRegion: 'drag' }}
+    >
       <button
         type="button"
         className="rounded-full border border-gray-900 text-gray-900 h-8 w-8 self-end mt-4 mr-4"

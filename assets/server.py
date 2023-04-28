@@ -1,3 +1,4 @@
+import sys
 import asyncio
 from aiohttp import web
 import pyatv
@@ -123,7 +124,7 @@ async def on_shutdown(app: web.Application) -> None:
 
 
 async def on_startup(app: web.Application) -> None:
-    print("Python listening on 22000", flush=True)
+    print("Python listening on %s", sys.argv[1], flush=True)
 
 
 def main():
@@ -133,7 +134,7 @@ def main():
     app.add_routes(routes)
     app.on_shutdown.append(on_shutdown)
     app.on_startup.append(on_startup)
-    web.run_app(app, port=22000)
+    web.run_app(app, port=sys.argv[1])
 
 
 if __name__ == "__main__":

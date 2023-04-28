@@ -92,8 +92,6 @@ const createWindow = async () => {
     bounds = mainWindow!.getBounds();
     mainWindow = null;
   });
-
-  mainWindow.on('blur', mainWindow.close);
 };
 
 const createAddDeviceWindow = async () => {
@@ -122,7 +120,6 @@ const createAddDeviceWindow = async () => {
 
 app.on('window-all-closed', (e: Electron.Event) => e.preventDefault());
 app.on('will-quit', () => stop());
-app.dock.hide();
 
 app
   .whenReady()
@@ -135,7 +132,7 @@ app
       if (!activeDeviceId) {
         createAddDeviceWindow();
       } else if (mainWindow) {
-        mainWindow.close();
+        mainWindow.show();
       } else {
         createWindow();
       }

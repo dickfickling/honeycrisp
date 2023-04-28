@@ -28,6 +28,8 @@ if (initialRoute === '/') {
   document.addEventListener('keydown', (event) => {
     if (isObjKey(event.key, keyToCommand)) {
       window.electron.control(keyToCommand[event.key]);
+      // don't pass event to focused button, if there is one
+      event.preventDefault();
     }
   });
 }

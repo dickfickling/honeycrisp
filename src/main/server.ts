@@ -1,24 +1,28 @@
 import axios, { AxiosResponse } from 'axios';
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
+import getPort from 'get-port';
 import { getCredentials, updateCredentials } from './credentials';
 import { getAssetPath } from './util';
 
 const PYTHON_BINARY = getAssetPath('dist/server');
+let port: string;
 
 let spawned: ChildProcessWithoutNullStreams | null = null;
 
 const connect = async (deviceId: string) => {
   const credentials = getCredentials();
   const result = await axios(
-    `http://localhost:22000/connect/${deviceId}?airplay=${credentials[deviceId].key}`
+    `http://localhost:${port}/connect/${deviceId}?airplay=${credentials[deviceId].key}`
   );
   console.log(result.data);
 };
 
-export const start = () => {
+export const start = async () => {
+  port = (await getPort()).toString();
+  console.log('Starting python on port ', port);
   return new Promise<void>((resolve, reject) => {
     console.log('Starting Python...');
-    spawned = spawn(PYTHON_BINARY);
+    spawned = spawn(PYTHON_BINARY, [port]);
     spawned.on('error', (error) => {
       console.error('Python spawn error:', error);
       reject(error);
@@ -63,7 +67,9 @@ export const control = async (
   autoRetry = true
 ) => {
   const result: AxiosResponse<{ success: boolean; error: string }> =
-    await axios(`http://localhost:22000/remote_control/${deviceId}/${command}`);
+    await axios(
+      `http://localhost:${port}/remote_control/${deviceId}/${command}`
+    );
   if (
     result.data.success === false &&
     result.data.error === 'not_connected' &&
@@ -76,14 +82,16 @@ export const control = async (
 };
 
 export const scan = async (): Promise<Array<{ name: string; id: string }>> => {
-  const response = await axios(`http://localhost:22000/scan`);
+  const response = await axios(`http://localhost:${port}/scan`);
   return response.data;
 };
 
 export const beginPairing = async (
   deviceId: string
 ): Promise<{ device_provides_pin: boolean; pin_to_enter?: number }> => {
-  const response = await axios(`http://localhost:22000/pair/${deviceId}/begin`);
+  const response = await axios(
+    `http://localhost:${port}/pair/${deviceId}/begin`
+  );
   return response.data;
 };
 
@@ -100,7 +108,9 @@ export const finishPairing = async (
     has_paired: boolean;
     credentials?: string;
     error?: string;
-  }> = await axios(`http://localhost:22000/pair/${deviceId}/finish?pin=${pin}`);
+  }> = await axios(
+    `http://localhost:${port}/pair/${deviceId}/finish?pin=${pin}`
+  );
   if (response.data.has_paired && response.data.credentials) {
     const credentials = getCredentials();
     credentials[deviceId] = {
