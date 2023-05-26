@@ -78,7 +78,7 @@ export const control = async (
     await connect(deviceId);
     await control(deviceId, command, false);
   }
-  console.log(result.data);
+  console.log({ command, data: result.data, deviceId });
 };
 
 export const scan = async (): Promise<Array<{ name: string; id: string }>> => {

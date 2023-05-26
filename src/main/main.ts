@@ -11,7 +11,7 @@ import {
   finishPairing,
   stop,
 } from './server';
-import { getCredentials } from './credentials';
+import { getCredentials, updateCredentials } from './credentials';
 
 let mainWindow: BrowserWindow | null = null;
 let activeDeviceId = Object.keys(getCredentials())[0];
@@ -32,6 +32,13 @@ ipcMain.handle(
     activeDeviceId = deviceId;
   }
 );
+ipcMain.handle('getCredentials', () => getCredentials());
+ipcMain.handle('removeDevice', (_event, deviceId: string) => {
+  const credentials = getCredentials();
+  delete credentials[deviceId];
+  updateCredentials(credentials);
+  return credentials;
+});
 
 if (process.env.NODE_ENV === 'production') {
   const sourceMapSupport = require('source-map-support');
@@ -112,10 +119,26 @@ const createAddDeviceWindow = async () => {
   });
 
   win.loadURL(resolveHtmlPath('index.html', '?initialRoute=addDevice'));
+};
 
-  win.on('closed', () => {
-    createWindow();
+const createManageDevicesWindow = async () => {
+  if (isDebug) {
+    await installExtensions();
+  }
+
+  const win = new BrowserWindow({
+    width: 200,
+    height: 400,
+    backgroundColor: '#101012',
+    icon: getAssetPath('remote.light.png'),
+    webPreferences: {
+      preload: app.isPackaged
+        ? path.join(__dirname, 'preload.js')
+        : path.join(__dirname, '../../.erb/dll/preload.js'),
+    },
   });
+
+  win.loadURL(resolveHtmlPath('index.html', '?initialRoute=manageDevices'));
 };
 
 app.on('window-all-closed', (e: Electron.Event) => e.preventDefault());
@@ -166,6 +189,12 @@ app
                 label: 'Add Device',
                 click() {
                   createAddDeviceWindow();
+                },
+              },
+              {
+                label: 'Manage Devices',
+                click() {
+                  createManageDevicesWindow();
                 },
               },
             ],

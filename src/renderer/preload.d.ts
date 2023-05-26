@@ -15,6 +15,8 @@ declare global {
         credentials?: string;
         error?: string;
       }>;
+      getCredentials: () => Promise<Record<string, { name: string }>>;
+      removeDevice: (name: string) => Promise<void>;
     };
   }
 }

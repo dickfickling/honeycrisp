@@ -220,6 +220,50 @@ const AddDevice = () => {
   );
 };
 
+const ManageDevices = () => {
+  const [devices, setDevices] = useState<Array<{
+    deviceId: string;
+    name: string;
+  }> | null>(null);
+
+  useEffect(() => {
+    const loadDevices = async () => {
+      const results = await window.electron.getCredentials();
+      setDevices(
+        Object.entries(results).map(([deviceId, value]) => ({
+          deviceId,
+          name: value.name,
+        }))
+      );
+    };
+
+    loadDevices();
+  }, []);
+
+  const removeDevice = (deviceId: string) => {
+    window.electron.removeDevice(deviceId);
+    setDevices(devices?.filter((d) => d.deviceId !== deviceId) ?? null);
+  };
+
+  return (
+    <div className="text-white">
+      <h1 className="text-center mt-2 mb-3">Manage Devices</h1>
+      <div className="flex flex-col">
+        {devices?.map(({ deviceId, name }) => {
+          return (
+            <div key={deviceId} className="flex flex-row items-center">
+              <button type="button" onClick={() => removeDevice(deviceId)}>
+                <i className="far fa-trash-alt text-lg p-2" />
+              </button>
+              <h2>{name}</h2>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 type AppProps = { initialRoute: string };
 const App: React.FC<AppProps> = ({ initialRoute }) => {
   return (
@@ -227,6 +271,7 @@ const App: React.FC<AppProps> = ({ initialRoute }) => {
       <Routes>
         <Route path="/" element={<Remote />} />
         <Route path="/addDevice" element={<AddDevice />} />
+        <Route path="/manageDevices" element={<ManageDevices />} />
       </Routes>
     </Router>
   );

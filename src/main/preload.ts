@@ -9,4 +9,7 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('beginPairing', deviceId),
   finishPairing: (deviceId: string, deviceName: string, pin?: number) =>
     ipcRenderer.invoke('finishPairing', deviceId, deviceName, pin),
+  getCredentials: () => ipcRenderer.invoke('getCredentials'),
+  removeDevice: (deviceId: string) =>
+    ipcRenderer.invoke('removeDevice', deviceId),
 } as Window['electron']);
