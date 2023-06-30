@@ -2,6 +2,7 @@ declare global {
   interface Window {
     electron: {
       control: (command: string) => void;
+      key: (key: string) => void;
       scan: () => Promise<Array<{ id: string; name: string }>>;
       beginPairing: (
         deviceId: string
@@ -16,7 +17,9 @@ declare global {
         error?: string;
       }>;
       getCredentials: () => Promise<Record<string, { name: string }>>;
+      getActiveDevice: () => Promise<{ id: string; name: string } | null>;
       removeDevice: (name: string) => Promise<void>;
+      onActiveDeviceChanged: (cb: (activeDeviceId: string) => void) => void;
     };
   }
 }

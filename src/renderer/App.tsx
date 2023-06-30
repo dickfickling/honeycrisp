@@ -25,6 +25,22 @@ const Remote = () => {
     window.electron.control(command);
   };
 
+  const [activeDevice, setActiveDevice] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+
+  useEffect(() => {
+    const loadActiveDevice = async () => {
+      const device = await window.electron.getActiveDevice();
+      setActiveDevice(device);
+    };
+
+    window.electron.onActiveDeviceChanged(loadActiveDevice);
+
+    loadActiveDevice();
+  }, []);
+
   return (
     <div
       className="bg-gray-400 text-white h-screen flex flex-col items-center"
@@ -32,13 +48,19 @@ const Remote = () => {
       // @ts-ignore
       style={{ webkitAppRegion: 'drag' }}
     >
-      <button
-        type="button"
-        className="rounded-full border border-gray-900 text-gray-900 h-8 w-8 self-end mt-4 mr-4"
-        onClick={() => handleRemoteButton('power_toggle')}
-      >
-        <i className="far fa-power-off" />
-      </button>
+      <div className="mt-4 px-4 flex w-full items-center">
+        <p className="text-gray-600 text-xs mb-1 cursor-default">
+          {activeDevice?.name || 'No Active Device'}
+        </p>
+        <div className="flex-1" />
+        <button
+          type="button"
+          className="rounded-full border border-gray-900 text-gray-900 h-8 w-8 self-end"
+          onClick={() => handleRemoteButton('power_toggle')}
+        >
+          <i className="far fa-power-off" />
+        </button>
+      </div>
       <div className="rounded-full overflow-hidden bg-gray-900 h-40 w-40 grid grid-cols-4 grid-rows-4 mt-2">
         <button
           type="button"

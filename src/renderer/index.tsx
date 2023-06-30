@@ -20,7 +20,10 @@ const keyToCommand = {
   ']': 'volume_up',
 };
 
-function isObjKey<T>(key: PropertyKey, obj: T): key is keyof T {
+function isObjKey<T extends { [key: string]: string }>(
+  key: PropertyKey,
+  obj: T
+): key is keyof T {
   return key in obj;
 }
 
@@ -28,8 +31,8 @@ if (initialRoute === '/') {
   document.addEventListener('keydown', (event) => {
     if (isObjKey(event.key, keyToCommand)) {
       window.electron.control(keyToCommand[event.key]);
-      // don't pass event to focused button, if there is one
-      event.preventDefault();
     }
+    // don't pass event to focused button, if there is one
+    event.preventDefault();
   });
 }

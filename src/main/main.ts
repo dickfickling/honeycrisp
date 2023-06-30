@@ -21,6 +21,10 @@ ipcMain.on('control', (_event, command) => {
   control(activeDeviceId, command);
 });
 
+ipcMain.on('key', (_event, key) => {
+  console.log('key', key);
+});
+
 ipcMain.handle('scan', () => scan());
 ipcMain.handle('beginPairing', (_event, deviceId: string) =>
   beginPairing(deviceId)
@@ -29,9 +33,16 @@ ipcMain.handle(
   'finishPairing',
   async (_event, deviceId: string, deviceName: string, pin?: number) => {
     await finishPairing(deviceId, deviceName, pin);
-    activeDeviceId = deviceId;
+    setActiveDevice(deviceId);
   }
 );
+ipcMain.handle('getActiveDevice', () => {
+  const credentials = getCredentials();
+  if (activeDeviceId && credentials[activeDeviceId]) {
+    return { id: activeDeviceId, name: credentials[activeDeviceId].name };
+  }
+  return null;
+});
 ipcMain.handle('getCredentials', () => getCredentials());
 ipcMain.handle('removeDevice', (_event, deviceId: string) => {
   const credentials = getCredentials();
@@ -52,6 +63,11 @@ if (isDebug) {
   // enable this to show the inspector
   // require('electron-debug')();
 }
+
+const setActiveDevice = (deviceId: string) => {
+  activeDeviceId = deviceId;
+  mainWindow?.webContents.send('active-device-changed', deviceId);
+};
 
 const installExtensions = async () => {
   const installer = require('electron-devtools-installer');
@@ -178,7 +194,7 @@ app
                   type: 'radio',
                   checked: activeDeviceId === id,
                   click() {
-                    activeDeviceId = id;
+                    setActiveDevice(id);
                   },
                 } as const;
               }),
