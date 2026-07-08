@@ -181,4 +181,22 @@ final class FakeCompanionServer {
 
         return TLV8.encode([(TLV8Tag.sequence, Data([0x04]))])
     }
+
+    // MARK: - Companion session keys (Task 4)
+
+    /// Derive the Companion per-frame ChaCha20 keys from the verified shared
+    /// secret, matching pyatv's `SRP_SALT`/`ClientEncrypt-main`/
+    /// `ServerEncrypt-main`. `client` is the key the client encrypts with
+    /// (the server decrypts inbound frames with it); `server` is the key the
+    /// server encrypts with. Must be called after `pairVerifyM4`.
+    func companionSessionKeys() throws -> (client: Data, server: Data) {
+        guard let shared = verifyShared else {
+            throw PairingError.invalidState("verify not completed")
+        }
+        let client = HAPCrypto.hkdf(
+            salt: "", info: "ClientEncrypt-main", sharedSecret: shared)
+        let server = HAPCrypto.hkdf(
+            salt: "", info: "ServerEncrypt-main", sharedSecret: shared)
+        return (client, server)
+    }
 }
