@@ -69,9 +69,20 @@ struct RemoteView: View {
 
     private var header: some View {
         HStack {
-            Text(appState.activeDevice?.name ?? "No device")
-                .font(.caption)
-                .foregroundStyle(Palette.subtle)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(appState.activeDevice?.name ?? "No device")
+                    .font(.caption)
+                    .foregroundStyle(Palette.subtle)
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 6, height: 6)
+                    Text(statusText)
+                        .font(.system(size: 9))
+                        .foregroundStyle(Palette.subtle)
+                }
+            }
+            .help(appState.remote?.lastError ?? statusText)
             Spacer()
             Button { appState.send(.powerToggle) } label: {
                 Image(systemName: "power")
@@ -82,6 +93,27 @@ struct RemoteView: View {
                     .contentShape(Circle())
             }
             .buttonStyle(PressableButtonStyle())
+        }
+    }
+
+    private var connectionState: ConnectionState {
+        appState.remote?.connectionState ?? .disconnected
+    }
+
+    private var statusColor: Color {
+        switch connectionState {
+        case .connected: return .green
+        case .connecting: return .yellow
+        case .disconnected: return Palette.subtle.opacity(0.6)
+        }
+    }
+
+    private var statusText: String {
+        guard appState.activeDevice != nil else { return "No device" }
+        switch connectionState {
+        case .connected: return "Connected"
+        case .connecting: return "Connecting…"
+        case .disconnected: return "Disconnected"
         }
     }
 

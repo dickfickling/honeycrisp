@@ -23,9 +23,9 @@ struct HoneycrispApp: App {
         .windowResizability(.contentSize)
         .defaultSize(width: 200, height: 500)
 
-        // Placeholder for the (future) pairing flow.
+        // Pairing wizard: scan → PIN → save.
         Window("Add Device", id: WindowID.addDevice) {
-            AddDeviceView()
+            PairingView()
                 .environment(appState)
         }
         .windowResizability(.contentSize)
@@ -82,26 +82,6 @@ private struct TrayMenu: View {
 
         Button("Quit") { NSApplication.shared.terminate(nil) }
             .keyboardShortcut("q")
-    }
-}
-
-// MARK: - Add Device (placeholder)
-
-private struct AddDeviceView: View {
-    var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "appletvremote.gen4")
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary)
-            Text("Add a device")
-                .font(.headline)
-            Text("Pairing with an Apple TV will be available in a later update.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(24)
-        .frame(width: 320, height: 220)
     }
 }
 

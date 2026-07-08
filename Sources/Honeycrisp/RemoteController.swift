@@ -38,7 +38,18 @@ public enum ConnectionState: Sendable {
 @MainActor
 public protocol RemoteControlling: AnyObject {
     var connectionState: ConnectionState { get }
+    /// Human-readable description of the most recent failure, for a status
+    /// tooltip. `nil` when there is nothing to report.
+    var lastError: String? { get }
     func send(_ command: RemoteCommand) async throws
+    /// Disconnect and release any live session. Called when the controller is
+    /// being replaced (e.g. the user switched or removed the active device).
+    func teardown() async
+}
+
+public extension RemoteControlling {
+    var lastError: String? { nil }
+    func teardown() async {}
 }
 
 /// A stand-in controller used until the real client lands. It reports itself as

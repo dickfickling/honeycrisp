@@ -14,8 +14,12 @@ public final class AppState {
     @ObservationIgnored
     private let logger = Logger(subsystem: "us.fickling.honeycrisp2", category: "AppState")
 
-    /// The controller commands are dispatched to. A mock for now.
-    public let remote: any RemoteControlling
+    @ObservationIgnored
+    private let makeController: @MainActor (StoredDevice) -> any RemoteControlling
+
+    /// The controller commands are dispatched to, rebuilt for the active device.
+    /// `nil` when no device is selected.
+    public private(set) var remote: (any RemoteControlling)?
 
     /// All paired devices, sorted for display.
     public private(set) var devices: [StoredDevice]
@@ -31,10 +35,11 @@ public final class AppState {
 
     public init(
         store: DeviceStore = DeviceStore(),
-        remote: any RemoteControlling = MockRemoteController()
+        makeController: @escaping @MainActor (StoredDevice) -> any RemoteControlling
+            = { CompanionRemoteController(device: $0) }
     ) {
         self.store = store
-        self.remote = remote
+        self.makeController = makeController
         let loaded = store.load()
         self.devices = loaded
         // Prefer the persisted selection, but only if it still exists; otherwise
@@ -47,6 +52,7 @@ public final class AppState {
         }
         // Persist the resolved selection so disk and memory agree.
         store.activeDeviceID = self.activeDeviceID
+        rebuildController()
     }
 
     /// Re-reads the device list from disk (used after mutations).
@@ -57,10 +63,26 @@ public final class AppState {
         }
     }
 
-    /// Selects the active device and persists the choice.
+    /// Selects the active device and persists the choice. Tears down the old
+    /// controller and builds a fresh one for the new device.
     public func setActiveDevice(_ id: String?) {
+        guard id != activeDeviceID else { return }
         activeDeviceID = id
         store.activeDeviceID = id
+        rebuildController()
+    }
+
+    /// Disconnect the current controller (if any) and build a new one for the
+    /// active device. A no-op-safe teardown runs on the outgoing controller.
+    private func rebuildController() {
+        if let old = remote {
+            Task { await old.teardown() }
+        }
+        if let device = activeDevice {
+            remote = makeController(device)
+        } else {
+            remote = nil
+        }
     }
 
     /// Adds (or updates) a device and refreshes the list.
@@ -89,6 +111,10 @@ public final class AppState {
 
     /// Fire-and-forget command dispatch. Errors are logged, not surfaced.
     public func send(_ command: RemoteCommand) {
+        guard let remote else {
+            logger.info("send(\(command.rawValue, privacy: .public)) ignored: no active device")
+            return
+        }
         Task {
             do {
                 try await remote.send(command)
