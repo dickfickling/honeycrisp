@@ -130,10 +130,16 @@ struct CompanionProtocolTests {
         let credentials = try mintCredentials()
         let remoteSID: UInt64 = 0x1122_3344
 
+        // Capture the _systemInfo request the client sends so its wire shape
+        // can be asserted below.
+        let (systemInfoStream, systemInfoCont) =
+            AsyncStream.makeStream(of: [String: OPACKValue].self)
+
         let responder: CompanionResponder = { req in
             guard let id = req["_i"]?.asString, let x = req["_x"]?.asInt else { return nil }
             switch id {
             case "_systemInfo":
+                systemInfoCont.yield(req)
                 return [
                     ("_i", .string(id)), ("_t", .int(3)), ("_x", .int(UInt64(x))),
                     ("_c", .dictionary([])),
@@ -157,6 +163,17 @@ struct CompanionProtocolTests {
         let sid = await proto.sessionID
         #expect(sid != nil)
         #expect((sid! >> 32) == remoteSID)
+
+        // pyatv sends `_idsID` as creds.client_id, which is raw *bytes* — it
+        // must arrive as OPACK data (not a string) carrying the credentials'
+        // clientId. OPACKValue equality is case-sensitive, so this locks the
+        // wire type marker down, not just the byte content.
+        var infoIterator = systemInfoStream.makeAsyncIterator()
+        let systemInfo = await infoIterator.next()
+        let content = systemInfo?["_c"]?.asStringDictionary
+        #expect(content?["_idsID"] == .data(Self.pairingId))
+        #expect(content?["_idsID"]?.asData == Self.pairingId)
+        #expect(content?["_idsID"]?.asString == nil)
 
         await driver.stop()
         await conn.close()

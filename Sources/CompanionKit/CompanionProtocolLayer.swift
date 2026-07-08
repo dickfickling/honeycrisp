@@ -163,14 +163,15 @@ public actor CompanionProtocolLayer {
     private func systemInfoContent(
         credentials: HAPCredentials, deviceInfo: CompanionDeviceInfo
     ) -> OPACKValue {
-        let clientID = String(decoding: credentials.clientId, as: UTF8.self)
-        // Order matches pyatv api.py `system_info`.
+        // Order matches pyatv api.py `system_info`. `_idsID` is
+        // `creds.client_id` which is *bytes* in pyatv, so it must be packed
+        // as OPACK raw data (not a string) for wire compatibility.
         return .dictionary([
             (.string("_bf"), .int(0)),
             (.string("_cf"), .int(512)),
             (.string("_clFl"), .int(128)),
             (.string("_i"), .string(deviceInfo.rpID)),
-            (.string("_idsID"), .string(clientID)),
+            (.string("_idsID"), .data(credentials.clientId)),
             (.string("_pubID"), .string(deviceInfo.deviceID)),
             (.string("_sf"), .int(256)),
             (.string("_sv"), .string(deviceInfo.softwareVersion)),
