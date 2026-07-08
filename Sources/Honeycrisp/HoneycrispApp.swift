@@ -182,6 +182,13 @@ private struct ManageDevicesView: View {
 
 /// Configures the remote's `NSWindow` so it is transparent (letting the rounded
 /// body show through), draggable by its background, and free of a title bar.
+///
+/// The window is made fully borderless: with `.titled` present, the theme frame
+/// draws its own rounded-corner rim (white slivers around the body's radius-24
+/// shape on macOS 26) and reserves title-bar height (dead space at the bottom).
+/// Removing `.titled` fixes both — verified visually — but AppKit then refuses
+/// key status (`canBecomeKey == false`), which would kill every keyboard
+/// shortcut, so `KeyableWindowSupport` restores it first.
 private struct RemoteWindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
@@ -195,25 +202,53 @@ private struct RemoteWindowConfigurator: NSViewRepresentable {
 
     private func configure(_ window: NSWindow?) {
         guard let window else { return }
+        // Idempotence guard: SwiftUI calls updateNSView repeatedly; mutating
+        // the style mask again on a live window is wasted work at best.
+        guard window.styleMask.contains(.titled) else { return }
+
+        KeyableWindowSupport.install(on: window)
         window.isMovableByWindowBackground = true
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.styleMask.insert(.fullSizeContentView)
-        // The async configuration can land after SwiftUI already sized the
-        // window with a title-bar inset (content 500 + ~28pt of dead space at
-        // the bottom); re-assert the intended content size now that the
-        // content view spans the full frame.
+        window.styleMask.remove(.titled)
+        // Dropping the title bar changes the frame math; re-assert the size so
+        // the body's 200x500 rounded rectangle is exactly the whole window.
         window.setContentSize(NSSize(width: 200, height: 500))
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = true
-        window.titlebarSeparatorStyle = .none
-        // macOS 26 auto-creates a liquid-glass NSToolbar for hidden-title-bar
-        // windows, rendering a glass strip over the remote; drop it entirely.
-        window.toolbar = nil
-        window.standardWindowButton(.closeButton)?.isHidden = true
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        window.standardWindowButton(.zoomButton)?.isHidden = true
+        if window.canBecomeKey, NSApp.isActive, NSApp.keyWindow == nil {
+            window.makeKeyAndOrderFront(nil)
+        }
+    }
+}
+
+/// Lets a borderless window become key/main so keyboard shortcuts keep working.
+///
+/// Replaces `canBecomeKey`/`canBecomeMain` ONCE on the window's own (SwiftUI-
+/// provided) class, affecting only windows of that exact class in this app.
+/// Deliberately NOT a per-instance `object_setClass` isa-swizzle: that
+/// technique collides with KVO's own dynamic subclassing (SwiftUI observes
+/// window properties) and crashed in `-[NSWindow setStyleMask:]` with a
+/// pointer-authentication failure.
+@MainActor
+private enum KeyableWindowSupport {
+    private static var patchedClasses: Set<ObjectIdentifier> = []
+
+    static func install(on window: NSWindow) {
+        guard let cls = object_getClass(window) else { return }
+        let id = ObjectIdentifier(cls)
+        guard !patchedClasses.contains(id) else { return }
+        patchedClasses.insert(id)
+
+        let yes = imp_implementationWithBlock(
+            { (_: NSWindow) -> Bool in true } as @convention(block) (NSWindow) -> Bool)
+        // class_replaceMethod overrides an inherited implementation without
+        // touching NSWindow itself or other window classes (the pairing and
+        // manage-devices windows are separate classes or stay titled anyway).
+        class_replaceMethod(cls, #selector(getter: NSWindow.canBecomeKey), yes, "B@:")
+        class_replaceMethod(cls, #selector(getter: NSWindow.canBecomeMain), yes, "B@:")
     }
 }
 
