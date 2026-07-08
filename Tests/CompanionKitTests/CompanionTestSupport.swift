@@ -111,6 +111,13 @@ actor CompanionServerDriver {
         }
 
         switch type {
+        case .psStart, .psNext:
+            // Pair-Setup runs plaintext (pre-encryption); route the `_pd` blob
+            // through the fake accessory's Pair-Setup state machine.
+            guard let dict = (try? OPACK.unpack(payload))?.asStringDictionary,
+                  let pd = dict["_pd"]?.asData else { return }
+            let responseTLV = (try? server.handlePairSetup(pd)) ?? Data()
+            await sendFrame(.psNext, pairs: [("_pd", .data(responseTLV))])
         case .pvStart, .pvNext:
             guard let dict = (try? OPACK.unpack(payload))?.asStringDictionary,
                   let pd = dict["_pd"]?.asData else { return }

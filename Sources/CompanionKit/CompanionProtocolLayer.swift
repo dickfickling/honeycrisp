@@ -207,10 +207,30 @@ public actor CompanionProtocolLayer {
         return response
     }
 
+    /// Send an OPACK event message (`_t == event`) without awaiting a response.
+    ///
+    /// Port of pyatv's `send_opack` used by `_send_event`: events (e.g.
+    /// `_interest` subscribe/unsubscribe, `_hidT`) are fire-and-forget and the
+    /// device never replies with a correlated `_x`.
+    public func sendEvent(
+        identifier: String,
+        content: OPACKValue = .dictionary([]),
+        frameType: FrameType = .eOPACK
+    ) async throws {
+        startReceiving()
+        let pairs: [(String, OPACKValue)] = [
+            ("_i", .string(identifier)),
+            ("_t", .int(UInt64(MessageType.event.rawValue))),
+            ("_c", content),
+            ("_x", .int(UInt64(nextXID()))),
+        ]
+        try await sendFrame(frameType: frameType, pairs: pairs)
+    }
+
     /// Exchange an auth (`PS_*`/`PV_*`) frame, correlating the response by
     /// frame type (pyatv `exchange_auth`).
     @discardableResult
-    private func exchangeAuth(
+    public func exchangeAuth(
         _ frameType: FrameType,
         _ pairs: [(String, OPACKValue)],
         responseType: FrameType,
