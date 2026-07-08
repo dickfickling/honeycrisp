@@ -30,6 +30,11 @@ let package = Package(
             name: "Honeycrisp",
             dependencies: ["CompanionKit"],
             path: "Sources/Honeycrisp"
+        ),
+        .testTarget(
+            name: "HoneycrispTests",
+            dependencies: ["Honeycrisp"],
+            path: "Tests/HoneycrispTests"
         )
     ]
 )
