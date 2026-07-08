@@ -127,9 +127,13 @@ public final class AppState {
             logger.info("send(\(command.rawValue, privacy: .public)) ignored: no active device")
             return
         }
+        let started = ContinuousClock.now
+        logger.info("send(\(command.rawValue, privacy: .public)) dispatched")
         Task {
             do {
                 try await remote.send(command)
+                let ms = (ContinuousClock.now - started) / .milliseconds(1)
+                logger.info("send(\(command.rawValue, privacy: .public)) completed in \(Int(ms), privacy: .public)ms")
             } catch {
                 logger.error("send(\(command.rawValue, privacy: .public)) failed: \(error.localizedDescription, privacy: .public)")
             }

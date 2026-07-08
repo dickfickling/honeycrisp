@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 
 // MARK: - Palette
 
@@ -52,6 +53,7 @@ private struct PressableButtonStyle: ButtonStyle {
 struct RemoteView: View {
     @Environment(AppState.self) private var appState
     @FocusState private var focused: Bool
+    private let logger = Logger(subsystem: "us.fickling.honeycrisp2", category: "RemoteView")
 
     var body: some View {
         VStack(spacing: 0) {
@@ -139,6 +141,7 @@ struct RemoteView: View {
     }
 
     private func handleKey(_ press: KeyPress) -> KeyPress.Result {
+        logger.info("keyPress received: \(press.characters.unicodeScalars.map { String(format: "U+%04X", $0.value) }.joined(), privacy: .public)")
         let command: RemoteCommand?
         switch press.key {
         case .upArrow: command = .up
@@ -153,6 +156,10 @@ struct RemoteView: View {
             case "h": command = .homeHold
             case "[": command = .volumeDown
             case "]": command = .volumeUp
+            // The hardware delete (backspace) key arrives as the DEL control
+            // character, which does not match KeyEquivalent.delete on all
+            // macOS versions; match the raw characters as a fallback.
+            case "\u{7F}", "\u{08}": command = .menu
             default: command = nil
             }
         }

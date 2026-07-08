@@ -70,10 +70,60 @@ private actor FakeCompanionClient: CompanionControlling {
 private struct FakeResolver: DeviceResolving {
     var address = ResolvedAddress(host: "10.0.0.5", port: 49_152)
     var error: Error?
+    let resolveCount = Counter()
 
     func resolve(identifier: String, timeout: Duration) async throws -> ResolvedAddress {
+        resolveCount.increment()
         if let error { throw error }
         return address
+    }
+}
+
+/// Thread-safe counter for call counting from Sendable fakes.
+private final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value = 0
+    var value: Int { lock.withLock { _value } }
+    func increment() { lock.withLock { _value += 1 } }
+}
+
+/// A client whose `connect()` always fails (simulates a stale cached address).
+private actor FailingConnectClient: CompanionControlling {
+    nonisolated let connectionStates: AsyncStream<CompanionClient.ConnectionState>
+    private nonisolated let continuation: AsyncStream<CompanionClient.ConnectionState>.Continuation
+
+    init() {
+        (connectionStates, continuation) =
+            AsyncStream.makeStream(of: CompanionClient.ConnectionState.self)
+    }
+
+    func connect() async throws { throw TestError.commandFailed }
+    func disconnect() async {}
+    func up() async throws {}
+    func down() async throws {}
+    func left() async throws {}
+    func right() async throws {}
+    func select() async throws {}
+    func menu() async throws {}
+    func homeHold() async throws {}
+    func playPause() async throws {}
+    func volumeUp() async throws {}
+    func volumeDown() async throws {}
+    func powerToggle() async throws {}
+}
+
+/// In-memory `AddressCaching` so tests never touch real UserDefaults.
+private final class MemoryAddressCache: AddressCaching, @unchecked Sendable {
+    private let lock = NSLock()
+    private var store: [String: ResolvedAddress] = [:]
+
+    init(_ initial: [String: ResolvedAddress] = [:]) { store = initial }
+
+    func address(for deviceID: String) -> ResolvedAddress? {
+        lock.withLock { store[deviceID] }
+    }
+    func setAddress(_ address: ResolvedAddress, for deviceID: String) {
+        lock.withLock { store[deviceID] = address }
     }
 }
 
@@ -108,6 +158,7 @@ struct CompanionRemoteControllerTests {
         let fake = FakeCompanionClient()
         let controller = CompanionRemoteController(
             device: validDevice(), resolver: FakeResolver(),
+            addressCache: MemoryAddressCache(),
             makeClient: { _, _, _ in fake })
 
         #expect(await fake.connectCount == 0)
@@ -127,6 +178,7 @@ struct CompanionRemoteControllerTests {
         var makeCount = 0
         let controller = CompanionRemoteController(
             device: validDevice(), resolver: FakeResolver(),
+            addressCache: MemoryAddressCache(),
             makeClient: { _, _, _ in
                 makeCount += 1
                 return fake
@@ -149,8 +201,57 @@ struct CompanionRemoteControllerTests {
 
         #expect(makeCount == 1) // only one client ever built
         #expect(await fake.connectCount == 1) // and connected exactly once
-        #expect(Set(await fake.calls) == ["up", "down"]) // both commands landed
+        // Presses queued during the connect are superseded by the newest one:
+        // exactly one command reaches the device, not a stale burst.
+        #expect(await fake.calls.count == 1)
         #expect(controller.connectionState == .connected)
+    }
+
+    @Test("A cached address skips discovery entirely")
+    func cachedAddressSkipsResolver() async throws {
+        let fake = FakeCompanionClient()
+        let resolver = FakeResolver()
+        let cache = MemoryAddressCache(["id-1": ResolvedAddress(host: "10.0.0.9", port: 7000)])
+        var dialedHost: String?
+        let controller = CompanionRemoteController(
+            device: validDevice(), resolver: resolver,
+            addressCache: cache,
+            makeClient: { host, _, _ in
+                dialedHost = host
+                return fake
+            })
+
+        try await controller.send(.select)
+
+        #expect(resolver.resolveCount.value == 0) // no mDNS browse
+        #expect(dialedHost == "10.0.0.9")
+        #expect(controller.connectionState == .connected)
+    }
+
+    @Test("A stale cached address falls back to discovery and refreshes the cache")
+    func staleCacheFallsBack() async throws {
+        let good = FakeCompanionClient()
+        let resolver = FakeResolver(address: ResolvedAddress(host: "10.0.0.42", port: 49_152))
+        let cache = MemoryAddressCache(["id-1": ResolvedAddress(host: "10.9.9.9", port: 7000)])
+        var dialed: [String] = []
+        let controller = CompanionRemoteController(
+            device: validDevice(), resolver: resolver,
+            addressCache: cache,
+            makeClient: { host, _, _ in
+                dialed.append(host)
+                if host == "10.9.9.9" {
+                    return FailingConnectClient()
+                }
+                return good
+            })
+
+        try await controller.send(.select)
+
+        #expect(dialed == ["10.9.9.9", "10.0.0.42"]) // stale first, then discovered
+        #expect(resolver.resolveCount.value == 1)
+        #expect(controller.connectionState == .connected)
+        #expect(cache.address(for: "id-1")?.host == "10.0.0.42") // cache refreshed
+        #expect(await good.calls == ["select"])
     }
 
     @Test("Every command maps to the matching client call")
@@ -165,6 +266,7 @@ struct CompanionRemoteControllerTests {
             let fake = FakeCompanionClient()
             let controller = CompanionRemoteController(
                 device: validDevice(), resolver: FakeResolver(),
+            addressCache: MemoryAddressCache(),
                 makeClient: { _, _, _ in fake })
             try await controller.send(command)
             #expect(await fake.calls == [name])
@@ -179,6 +281,7 @@ struct CompanionRemoteControllerTests {
         var index = 0
         let controller = CompanionRemoteController(
             device: validDevice(), resolver: FakeResolver(),
+            addressCache: MemoryAddressCache(),
             makeClient: { _, _, _ in defer { index += 1 }; return clients[index] })
 
         try await controller.send(.menu)
@@ -198,6 +301,7 @@ struct CompanionRemoteControllerTests {
         var index = 0
         let controller = CompanionRemoteController(
             device: validDevice(), resolver: FakeResolver(),
+            addressCache: MemoryAddressCache(),
             makeClient: { _, _, _ in defer { index += 1 }; return clients[index] })
 
         await #expect(throws: TestError.self) {
@@ -216,6 +320,7 @@ struct CompanionRemoteControllerTests {
         let controller = CompanionRemoteController(
             device: validDevice(),
             resolver: FakeResolver(error: ControllerError.deviceNotFound("id-1")),
+            addressCache: MemoryAddressCache(),
             makeClient: { _, _, _ in fake })
 
         await #expect(throws: ControllerError.self) {
@@ -231,6 +336,7 @@ struct CompanionRemoteControllerTests {
         let controller = CompanionRemoteController(
             device: StoredDevice(id: "x", name: "n", credentials: "not-hex"),
             resolver: FakeResolver(),
+            addressCache: MemoryAddressCache(),
             makeClient: { _, _, _ in FakeCompanionClient() })
 
         await #expect(throws: ControllerError.invalidCredentials) {
@@ -243,6 +349,7 @@ struct CompanionRemoteControllerTests {
         let fake = FakeCompanionClient()
         let controller = CompanionRemoteController(
             device: validDevice(), resolver: FakeResolver(),
+            addressCache: MemoryAddressCache(),
             makeClient: { _, _, _ in fake })
 
         try await controller.send(.up)
@@ -259,6 +366,7 @@ struct CompanionRemoteControllerTests {
         let fake = FakeCompanionClient()
         let controller = CompanionRemoteController(
             device: validDevice(), resolver: FakeResolver(),
+            addressCache: MemoryAddressCache(),
             makeClient: { _, _, _ in fake })
 
         try await controller.send(.up)

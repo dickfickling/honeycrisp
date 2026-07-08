@@ -101,6 +101,37 @@ public struct CompanionDeviceResolver: DeviceResolving {
     }
 }
 
+/// Remembers each device's last-known address so reconnects can skip the slow
+/// (and occasionally flaky) mDNS browse and dial the device directly.
+public protocol AddressCaching: AnyObject, Sendable {
+    func address(for deviceID: String) -> ResolvedAddress?
+    func setAddress(_ address: ResolvedAddress, for deviceID: String)
+}
+
+/// UserDefaults-backed `AddressCaching` ("host:port" under a per-device key).
+/// `@unchecked Sendable`: stateless besides UserDefaults, which is thread-safe.
+public final class DefaultsAddressCache: AddressCaching, @unchecked Sendable {
+    private let defaults: UserDefaults
+
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    private func key(_ deviceID: String) -> String { "lastAddress.\(deviceID)" }
+
+    public func address(for deviceID: String) -> ResolvedAddress? {
+        guard let stored = defaults.string(forKey: key(deviceID)) else { return nil }
+        // Split on the LAST colon: IPv6 hosts contain colons themselves.
+        guard let sep = stored.lastIndex(of: ":"),
+              let port = UInt16(stored[stored.index(after: sep)...]) else { return nil }
+        return ResolvedAddress(host: String(stored[..<sep]), port: port)
+    }
+
+    public func setAddress(_ address: ResolvedAddress, for deviceID: String) {
+        defaults.set("\(address.host):\(address.port)", forKey: key(deviceID))
+    }
+}
+
 /// Errors surfaced by the CompanionKit-backed controller.
 public enum ControllerError: Error, Equatable, Sendable, LocalizedError {
     /// No live service advertised the device's identifier before the timeout.
@@ -132,6 +163,7 @@ public final class CompanionRemoteController: RemoteControlling {
 
     @ObservationIgnored private let device: StoredDevice
     @ObservationIgnored private let resolver: any DeviceResolving
+    @ObservationIgnored private let addressCache: any AddressCaching
     @ObservationIgnored private let makeClient: @MainActor (String, UInt16, HAPCredentials) -> any CompanionControlling
     @ObservationIgnored private let resolveTimeout: Duration
     @ObservationIgnored private let logger = Logger(subsystem: "us.fickling.honeycrisp2", category: "CompanionRemote")
@@ -143,10 +175,14 @@ public final class CompanionRemoteController: RemoteControlling {
     /// presses while disconnected coalesce into a single resolve + connect
     /// (otherwise the loser's fully-connected client is orphaned forever).
     @ObservationIgnored private var connectTask: Task<Void, Error>?
+    /// Monotonic ticket per `send`; commands that waited out a connect only
+    /// fire if no newer command arrived meanwhile (see `send`).
+    @ObservationIgnored private var sendTicket = 0
 
     public init(
         device: StoredDevice,
         resolver: any DeviceResolving = CompanionDeviceResolver(),
+        addressCache: any AddressCaching = DefaultsAddressCache(),
         resolveTimeout: Duration = .seconds(5),
         makeClient: @escaping @MainActor (String, UInt16, HAPCredentials) -> any CompanionControlling
             = { host, port, credentials in
@@ -155,6 +191,7 @@ public final class CompanionRemoteController: RemoteControlling {
     ) {
         self.device = device
         self.resolver = resolver
+        self.addressCache = addressCache
         self.resolveTimeout = resolveTimeout
         self.makeClient = makeClient
     }
@@ -162,10 +199,19 @@ public final class CompanionRemoteController: RemoteControlling {
     // MARK: - RemoteControlling
 
     public func send(_ command: RemoteCommand) async throws {
+        sendTicket += 1
+        let ticket = sendTicket
         if client == nil {
             // Initial connect failures are surfaced directly (there is no
             // established session to reconnect).
             try await connect()
+            // Presses that piled up while the connect was in flight would all
+            // fire at once now (a burst of stale d-pad moves into the TV).
+            // Only the newest one survives; the rest drop silently.
+            guard ticket == sendTicket else {
+                logger.info("Dropping superseded \(command.rawValue, privacy: .public) queued during connect")
+                return
+            }
         }
         do {
             try await dispatch(command)
@@ -176,6 +222,7 @@ public final class CompanionRemoteController: RemoteControlling {
             await teardown()
             do {
                 try await connect()
+                guard ticket == sendTicket else { return }
                 try await dispatch(command)
             } catch {
                 lastError = Self.describe(error)
@@ -222,6 +269,19 @@ public final class CompanionRemoteController: RemoteControlling {
         connectionState = .connecting
         lastError = nil
 
+        // Fast path: dial the last-known address directly (mDNS browsing takes
+        // seconds and sometimes misses entirely). Fall back to a fresh
+        // discovery resolve if the cached address no longer answers — devices
+        // move to new DHCP addresses over time.
+        if let cached = addressCache.address(for: device.id) {
+            do {
+                try await establishClient(at: cached, credentials: credentials)
+                return
+            } catch {
+                logger.info("Cached address \(cached.host, privacy: .private):\(cached.port) failed (\(error.localizedDescription, privacy: .public)); falling back to discovery")
+            }
+        }
+
         let address: ResolvedAddress
         do {
             address = try await resolver.resolve(identifier: device.id, timeout: resolveTimeout)
@@ -230,7 +290,16 @@ public final class CompanionRemoteController: RemoteControlling {
             lastError = Self.describe(error)
             throw error
         }
+        do {
+            try await establishClient(at: address, credentials: credentials)
+        } catch {
+            connectionState = .disconnected
+            lastError = Self.describe(error)
+            throw error
+        }
+    }
 
+    private func establishClient(at address: ResolvedAddress, credentials: HAPCredentials) async throws {
         let newClient = makeClient(address.host, address.port, credentials)
         startMirroring(newClient)
         do {
@@ -238,12 +307,11 @@ public final class CompanionRemoteController: RemoteControlling {
         } catch {
             mirrorTask?.cancel()
             mirrorTask = nil
-            connectionState = .disconnected
-            lastError = Self.describe(error)
             throw error
         }
         client = newClient
         connectionState = .connected
+        addressCache.setAddress(address, for: device.id)
     }
 
     private func dispatch(_ command: RemoteCommand) async throws {
