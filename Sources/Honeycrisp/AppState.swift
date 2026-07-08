@@ -79,7 +79,19 @@ public final class AppState {
             Task { await old.teardown() }
         }
         if let device = activeDevice {
-            remote = makeController(device)
+            let controller = makeController(device)
+            remote = controller
+            // Eagerly reconnect to the most recently used device so the first
+            // button press doesn't pay discovery + handshake latency. Failures
+            // surface via the controller's connectionState/lastError; the next
+            // send() retries lazily as before.
+            Task { [logger] in
+                do {
+                    try await controller.connect()
+                } catch {
+                    logger.info("Eager connect failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
         } else {
             remote = nil
         }

@@ -139,4 +139,57 @@ struct DeviceStoreTests {
         let state = AppState(store: DeviceStore(directory: f.directory, defaults: f.defaults))
         #expect(state.activeDevice?.id == "id-a")
     }
+
+    /// Records `connect()` calls so eager-connect behavior is observable.
+    @MainActor
+    private final class RecordingController: RemoteControlling {
+        let device: StoredDevice
+        private(set) var connectCount = 0
+        var connectionState: ConnectionState = .disconnected
+
+        init(device: StoredDevice) { self.device = device }
+        func send(_ command: RemoteCommand) async throws {}
+        func connect() async throws { connectCount += 1 }
+    }
+
+    @Test("AppState eagerly connects to the most recently used device at launch and on switch")
+    @MainActor
+    func appStateEagerlyConnects() async throws {
+        let f = Fixture()
+        try f.store.save([
+            StoredDevice(id: "id-a", name: "Alpha", credentials: "c1"),
+            StoredDevice(id: "id-b", name: "Bravo", credentials: "c2"),
+        ])
+        f.store.activeDeviceID = "id-b" // most recently used
+
+        var controllers: [RecordingController] = []
+        let state = AppState(store: DeviceStore(directory: f.directory, defaults: f.defaults)) { device in
+            let controller = RecordingController(device: device)
+            controllers.append(controller)
+            return controller
+        }
+
+        // Launch: one controller for the persisted device, eagerly connected.
+        #expect(state.activeDevice?.id == "id-b")
+        try #require(controllers.count == 1)
+        #expect(controllers[0].device.id == "id-b")
+        await waitUntil { controllers[0].connectCount == 1 }
+        #expect(controllers[0].connectCount == 1)
+
+        // Switching devices builds a fresh controller and eagerly connects it too.
+        state.setActiveDevice("id-a")
+        try #require(controllers.count == 2)
+        #expect(controllers[1].device.id == "id-a")
+        await waitUntil { controllers[1].connectCount == 1 }
+        #expect(controllers[1].connectCount == 1)
+    }
+
+    /// Polls a main-actor condition (the eager connect runs in a spawned Task).
+    @MainActor
+    private func waitUntil(_ condition: () -> Bool) async {
+        for _ in 0..<200 {
+            if condition() { return }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+    }
 }

@@ -42,6 +42,10 @@ public protocol RemoteControlling: AnyObject {
     /// tooltip. `nil` when there is nothing to report.
     var lastError: String? { get }
     func send(_ command: RemoteCommand) async throws
+    /// Establish the session eagerly (e.g. at launch or after a device switch)
+    /// so the first button press doesn't pay discovery + handshake latency.
+    /// Idempotent: a no-op when already connected or connecting.
+    func connect() async throws
     /// Disconnect and release any live session. Called when the controller is
     /// being replaced (e.g. the user switched or removed the active device).
     func teardown() async
@@ -49,6 +53,7 @@ public protocol RemoteControlling: AnyObject {
 
 public extension RemoteControlling {
     var lastError: String? { nil }
+    func connect() async throws {}
     func teardown() async {}
 }
 

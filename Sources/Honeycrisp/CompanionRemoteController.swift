@@ -203,8 +203,9 @@ public final class CompanionRemoteController: RemoteControlling {
     // MARK: - Internals
 
     /// Connect if needed, coalescing concurrent callers onto one in-flight
-    /// attempt so exactly one client ever results.
-    private func connect() async throws {
+    /// attempt so exactly one client ever results. Public so the app can
+    /// eagerly establish the session at launch / device switch.
+    public func connect() async throws {
         if client != nil { return }
         if let connectTask {
             try await connectTask.value
