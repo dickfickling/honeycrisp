@@ -13,6 +13,28 @@ private enum Palette {
     static let innerOutline = Color.white.opacity(0.35)
 }
 
+extension View {
+    /// The remote's body: instead of drawing a custom rounded rectangle (whose
+    /// radius fights the native window corner mask), paint the WHOLE window —
+    /// title-bar region included — as a translucent glass material tinted with
+    /// the remote gray. The native window shape provides the corners, so there
+    /// are no rounding artifacts and the titled window keeps keyboard focus.
+    @ViewBuilder
+    func translucentRemoteBody() -> some View {
+        if #available(macOS 15.0, *) {
+            self.containerBackground(for: .window) {
+                ZStack {
+                    Rectangle().fill(.ultraThinMaterial)
+                    Color(red: 156 / 255, green: 163 / 255, blue: 175 / 255)
+                        .opacity(0.55)
+                }
+            }
+        } else {
+            self.background(Color(red: 156 / 255, green: 163 / 255, blue: 175 / 255))
+        }
+    }
+}
+
 /// Press feedback shared by every control: a subtle scale + fade while held.
 private struct PressableButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -58,8 +80,7 @@ struct RemoteView: View {
         }
         .padding(16)
         .frame(width: 200, height: 500)
-        .background(Palette.body)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .translucentRemoteBody()
         .focusable()
         .focusEffectDisabled()
         .focused($focused)

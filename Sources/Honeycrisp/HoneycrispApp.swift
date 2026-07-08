@@ -32,11 +32,6 @@ struct HoneycrispApp: App {
                 // hidden-title-bar windows; keep it and its background out.
                 .toolbar(.hidden, for: .windowToolbar)
                 .hiddenWindowToolbarBackground()
-                // macOS 26 paints an opaque container background (the white
-                // sheet visible at the corners) over the whole window frame
-                // regardless of NSWindow.backgroundColor; clear it so only the
-                // remote body's rounded rectangle is visible.
-                .clearWindowContainerBackground()
                 // Belt-and-braces: also wire the delegate from here in case a
                 // menu-bar style ever stops hosting the label eagerly.
                 .task { appDelegate.openRemote = { openWindow(id: WindowID.remote) } }
@@ -202,53 +197,21 @@ private struct RemoteWindowConfigurator: NSViewRepresentable {
 
     private func configure(_ window: NSWindow?) {
         guard let window else { return }
-        // Idempotence guard: SwiftUI calls updateNSView repeatedly; mutating
-        // the style mask again on a live window is wasted work at best.
-        guard window.styleMask.contains(.titled) else { return }
-
-        KeyableWindowSupport.install(on: window)
+        // The window keeps `.titled` (borderless windows lose keyboard focus in
+        // SwiftUI even with canBecomeKey patched); the title bar is fully
+        // transparent and the container-background material paints under it.
         window.isMovableByWindowBackground = true
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.styleMask.insert(.fullSizeContentView)
-        window.styleMask.remove(.titled)
-        // Dropping the title bar changes the frame math; re-assert the size so
-        // the body's 200x500 rounded rectangle is exactly the whole window.
-        window.setContentSize(NSSize(width: 200, height: 500))
-        window.isOpaque = false
-        window.backgroundColor = .clear
         window.hasShadow = true
-        if window.canBecomeKey, NSApp.isActive, NSApp.keyWindow == nil {
-            window.makeKeyAndOrderFront(nil)
-        }
-    }
-}
-
-/// Lets a borderless window become key/main so keyboard shortcuts keep working.
-///
-/// Replaces `canBecomeKey`/`canBecomeMain` ONCE on the window's own (SwiftUI-
-/// provided) class, affecting only windows of that exact class in this app.
-/// Deliberately NOT a per-instance `object_setClass` isa-swizzle: that
-/// technique collides with KVO's own dynamic subclassing (SwiftUI observes
-/// window properties) and crashed in `-[NSWindow setStyleMask:]` with a
-/// pointer-authentication failure.
-@MainActor
-private enum KeyableWindowSupport {
-    private static var patchedClasses: Set<ObjectIdentifier> = []
-
-    static func install(on window: NSWindow) {
-        guard let cls = object_getClass(window) else { return }
-        let id = ObjectIdentifier(cls)
-        guard !patchedClasses.contains(id) else { return }
-        patchedClasses.insert(id)
-
-        let yes = imp_implementationWithBlock(
-            { (_: NSWindow) -> Bool in true } as @convention(block) (NSWindow) -> Bool)
-        // class_replaceMethod overrides an inherited implementation without
-        // touching NSWindow itself or other window classes (the pairing and
-        // manage-devices windows are separate classes or stay titled anyway).
-        class_replaceMethod(cls, #selector(getter: NSWindow.canBecomeKey), yes, "B@:")
-        class_replaceMethod(cls, #selector(getter: NSWindow.canBecomeMain), yes, "B@:")
+        window.titlebarSeparatorStyle = .none
+        // macOS 26 auto-creates a liquid-glass NSToolbar for hidden-title-bar
+        // windows, rendering a glass strip over the remote; drop it entirely.
+        window.toolbar = nil
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
     }
 }
 
@@ -259,17 +222,6 @@ extension View {
     fileprivate func hiddenWindowToolbarBackground() -> some View {
         if #available(macOS 15.0, *) {
             self.toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        } else {
-            self
-        }
-    }
-
-    /// `containerBackground(_:for: .window)` is macOS 15+; the package still
-    /// targets macOS 14, so apply it behind an availability check.
-    @ViewBuilder
-    fileprivate func clearWindowContainerBackground() -> some View {
-        if #available(macOS 15.0, *) {
-            self.containerBackground(.clear, for: .window)
         } else {
             self
         }
