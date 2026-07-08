@@ -139,6 +139,10 @@ public final class CompanionRemoteController: RemoteControlling {
     @ObservationIgnored private var client: (any CompanionControlling)?
     @ObservationIgnored private var mirrorTask: Task<Void, Never>?
     @ObservationIgnored private var parsedCredentials: HAPCredentials?
+    /// The in-flight connect, shared by concurrent `send`s so two quick button
+    /// presses while disconnected coalesce into a single resolve + connect
+    /// (otherwise the loser's fully-connected client is orphaned forever).
+    @ObservationIgnored private var connectTask: Task<Void, Error>?
 
     public init(
         device: StoredDevice,
@@ -181,6 +185,13 @@ public final class CompanionRemoteController: RemoteControlling {
     }
 
     public func teardown() async {
+        if let task = connectTask {
+            connectTask = nil
+            task.cancel()
+            // Wait for the connect to settle so a client it produced is seen
+            // below (and disconnected) rather than orphaned.
+            _ = try? await task.value
+        }
         mirrorTask?.cancel()
         mirrorTask = nil
         let old = client
@@ -191,7 +202,21 @@ public final class CompanionRemoteController: RemoteControlling {
 
     // MARK: - Internals
 
+    /// Connect if needed, coalescing concurrent callers onto one in-flight
+    /// attempt so exactly one client ever results.
     private func connect() async throws {
+        if client != nil { return }
+        if let connectTask {
+            try await connectTask.value
+            return
+        }
+        let task = Task { try await self.performConnect() }
+        connectTask = task
+        defer { if connectTask == task { connectTask = nil } }
+        try await task.value
+    }
+
+    private func performConnect() async throws {
         let credentials = try credentials()
         connectionState = .connecting
         lastError = nil

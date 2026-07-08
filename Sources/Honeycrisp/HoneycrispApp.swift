@@ -4,13 +4,20 @@ import SwiftUI
 @main
 @MainActor
 struct HoneycrispApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var appState = AppState()
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
-        // Tray menu.
-        MenuBarExtra("Honeycrisp", systemImage: "appletvremote.gen4.fill") {
+        // Tray menu. The label view is hosted in the status bar for the app's
+        // whole lifetime, so it doubles as the place where the app delegate is
+        // wired up with an `openWindow` it can call on Cmd-Tab reactivation.
+        MenuBarExtra {
             TrayMenu()
                 .environment(appState)
+        } label: {
+            Label("Honeycrisp", systemImage: "appletvremote.gen4.fill")
+                .task { appDelegate.openRemote = { openWindow(id: WindowID.remote) } }
         }
 
         // The remote itself: fixed 200x500, no title bar, draggable by background.
@@ -18,6 +25,16 @@ struct HoneycrispApp: App {
             RemoteView()
                 .environment(appState)
                 .background(RemoteWindowConfigurator())
+                // Fill the whole (title-bar-free) content area so the remote
+                // body's rounded rectangle alone defines the window shape.
+                .ignoresSafeArea()
+                // On macOS 26 a liquid-glass toolbar strip is auto-created for
+                // hidden-title-bar windows; keep it and its background out.
+                .toolbar(.hidden, for: .windowToolbar)
+                .hiddenWindowToolbarBackground()
+                // Belt-and-braces: also wire the delegate from here in case a
+                // menu-bar style ever stops hosting the label eagerly.
+                .task { appDelegate.openRemote = { openWindow(id: WindowID.remote) } }
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
@@ -43,6 +60,39 @@ enum WindowID {
     static let remote = "remote"
     static let addDevice = "addDevice"
     static let manageDevices = "manageDevices"
+}
+
+// MARK: - App delegate
+
+/// Brings the remote back when the app is activated with nothing on screen.
+///
+/// With `LSUIElement` false the app lives in the Cmd-Tab switcher; switching to
+/// it only *activates* the app (no reopen event), so if every window was closed
+/// nothing would appear. Dock-icon clicks send `applicationShouldHandleReopen`
+/// instead. Both paths reopen the remote window when no regular window exists.
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Opens the remote Window scene; wired up by `HoneycrispApp` via
+    /// `openWindow` (idempotent: opening an already-open `Window` fronts it).
+    var openRemote: (() -> Void)?
+
+    /// `true` when some user-facing window is open or minimized. The menu bar
+    /// extra's status item is backed by an always-visible window, so filter to
+    /// windows that can become key.
+    private var hasUserWindow: Bool {
+        NSApp.windows.contains { $0.canBecomeKey && ($0.isVisible || $0.isMiniaturized) }
+    }
+
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication, hasVisibleWindows flag: Bool
+    ) -> Bool {
+        if !hasUserWindow { openRemote?() }
+        return true
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        if !hasUserWindow { openRemote?() }
+    }
 }
 
 // MARK: - Tray menu
@@ -147,8 +197,24 @@ private struct RemoteWindowConfigurator: NSViewRepresentable {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = true
+        // macOS 26 auto-creates a liquid-glass NSToolbar for hidden-title-bar
+        // windows, rendering a glass strip over the remote; drop it entirely.
+        window.toolbar = nil
         window.standardWindowButton(.closeButton)?.isHidden = true
         window.standardWindowButton(.miniaturizeButton)?.isHidden = true
         window.standardWindowButton(.zoomButton)?.isHidden = true
+    }
+}
+
+/// `toolbarBackgroundVisibility(_:for:)` is macOS 15+; the package still
+/// targets macOS 14, so apply it behind an availability check.
+extension View {
+    @ViewBuilder
+    fileprivate func hiddenWindowToolbarBackground() -> some View {
+        if #available(macOS 15.0, *) {
+            self.toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        } else {
+            self
+        }
     }
 }

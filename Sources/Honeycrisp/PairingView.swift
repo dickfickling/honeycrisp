@@ -149,6 +149,8 @@ public final class PairingModel {
             phase = .pin(row)
         } catch {
             errorMessage = "Couldn't start pairing: \(error.localizedDescription)"
+            // Close any half-open connection before dropping the pairer.
+            await pairer.cancel()
             self.pairer = nil
             startScan()
         }
@@ -176,6 +178,14 @@ public final class PairingModel {
             pin = ""
             await rebegin(row)
         }
+    }
+
+    /// Tear down everything when the wizard window closes: stop scanning and
+    /// cancel any mid-flight pairing session so its connection is released.
+    public func shutdown() async {
+        stopScan()
+        await pairer?.cancel()
+        pairer = nil
     }
 
     /// Abandon PIN entry and go back to scanning.
@@ -234,7 +244,13 @@ struct PairingView: View {
         .onChange(of: appState.devices) { _, newValue in
             model?.pairedIDs = Set(newValue.map(\.id))
         }
-        .onDisappear { model?.stopScan() }
+        .onDisappear {
+            // Discard the model so reopening the window starts a fresh scan
+            // (no stale PIN/success phase), tearing down any mid-flight pairer.
+            let closing = model
+            model = nil
+            Task { await closing?.shutdown() }
+        }
     }
 }
 

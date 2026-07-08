@@ -32,6 +32,23 @@ private final class Recorder: @unchecked Sendable {
     }
 }
 
+/// A transport that opens fine but fails every send, recording `close()` calls
+/// so tests can assert failure paths release the connection.
+private actor FailingSendTransport: CompanionTransport {
+    private(set) var closeCount = 0
+
+    func start(host: String, port: UInt16) async throws {}
+    func send(_ data: Data) async throws {
+        throw CompanionConnectionError.transportFailed("send failed")
+    }
+    func receive() async throws -> Data {
+        // Park until the read loop is cancelled by close().
+        try await Task.sleep(for: .seconds(60))
+        throw CompanionConnectionError.closed
+    }
+    func close() async { closeCount += 1 }
+}
+
 /// Tests for the high-level `CompanionClient`, `CompanionPairer`, HID/InputAction
 /// tables, and `CompanionDiscovery` identifier extraction.
 struct CompanionClientTests {
@@ -303,6 +320,19 @@ struct CompanionClientTests {
         }
 
         await driver.stop()
+    }
+
+    @Test func beginFailureClosesConnection() async throws {
+        let transport = FailingSendTransport()
+        let pairer = CompanionPairer(
+            host: "test", port: 0, transport: transport,
+            signingSeed: Self.clientSeed, pairingId: Self.pairingId)
+
+        await #expect(throws: CompanionConnectionError.transportFailed("send failed")) {
+            try await pairer.begin()
+        }
+        // begin() must not leak the connection when the M1 exchange fails.
+        #expect(await transport.closeCount == 1)
     }
 
     // MARK: - Discovery

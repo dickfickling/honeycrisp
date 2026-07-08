@@ -18,18 +18,32 @@ private actor FakeCompanionClient: CompanionControlling {
     private(set) var connectCount = 0
     private(set) var disconnectCount = 0
     private var dispatchFailures: Int
+    private let holdConnect: Bool
+    private var heldConnects: [CheckedContinuation<Void, Never>] = []
 
-    init(dispatchFailures: Int = 0) {
+    init(dispatchFailures: Int = 0, holdConnect: Bool = false) {
         (connectionStates, continuation) =
             AsyncStream.makeStream(of: CompanionClient.ConnectionState.self)
         self.dispatchFailures = dispatchFailures
+        self.holdConnect = holdConnect
     }
 
     nonisolated func emit(_ state: CompanionClient.ConnectionState) {
         continuation.yield(state)
     }
 
-    func connect() async throws { connectCount += 1 }
+    /// Resume any `connect()` calls parked by `holdConnect`.
+    func releaseConnects() {
+        heldConnects.forEach { $0.resume() }
+        heldConnects.removeAll()
+    }
+
+    func connect() async throws {
+        connectCount += 1
+        if holdConnect {
+            await withCheckedContinuation { heldConnects.append($0) }
+        }
+    }
     func disconnect() async { disconnectCount += 1 }
 
     private func record(_ name: String) throws {
@@ -76,6 +90,14 @@ private func waitUntil(_ condition: () -> Bool) async {
     }
 }
 
+/// Poll an async (e.g. actor-isolated) condition.
+private func waitUntilAsync(isolation: isolated (any Actor)? = #isolation, _ condition: () async -> Bool) async {
+    for _ in 0..<200 {
+        if await condition() { return }
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+}
+
 // MARK: - Tests
 
 @Suite("CompanionRemoteController")
@@ -97,6 +119,38 @@ struct CompanionRemoteControllerTests {
         try await controller.send(.select)
         #expect(await fake.connectCount == 1) // no reconnect
         #expect(await fake.calls == ["homeHold", "select"])
+    }
+
+    @Test("Two concurrent sends while disconnected coalesce into one connect")
+    func concurrentSendsCoalesceConnect() async throws {
+        let fake = FakeCompanionClient(holdConnect: true)
+        var makeCount = 0
+        let controller = CompanionRemoteController(
+            device: validDevice(), resolver: FakeResolver(),
+            makeClient: { _, _, _ in
+                makeCount += 1
+                return fake
+            })
+
+        // Two "button presses" land while disconnected; the first parks inside
+        // the fake's held connect, the second must join it rather than start a
+        // second connect (which would orphan a fully-connected client).
+        let sendA = Task { try await controller.send(.up) }
+        let sendB = Task { try await controller.send(.down) }
+
+        await waitUntilAsync { await fake.connectCount >= 1 }
+        // Give the second send time to reach the connect path while the first
+        // is still held mid-connect, then let the connect finish.
+        for _ in 0..<20 { await Task.yield() }
+        await fake.releaseConnects()
+
+        try await sendA.value
+        try await sendB.value
+
+        #expect(makeCount == 1) // only one client ever built
+        #expect(await fake.connectCount == 1) // and connected exactly once
+        #expect(Set(await fake.calls) == ["up", "down"]) // both commands landed
+        #expect(controller.connectionState == .connected)
     }
 
     @Test("Every command maps to the matching client call")

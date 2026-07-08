@@ -67,21 +67,27 @@ public actor CompanionPairer {
         self.connection = conn
         self.proto = proto
 
-        // M1: {Method: 0x00, SeqNo: 0x01} — identical to PairSetup.m1() and
-        // independent of the (not-yet-known) PIN.
-        let m1 = TLV8.encode([
-            (TLV8Tag.method, Data([0x00])),
-            (TLV8Tag.sequence, Data([0x01])),
-        ])
-        let resp = try await proto.exchangeAuth(
-            .psStart,
-            [("_pd", .data(m1)), ("_pwTy", .int(1))],
-            responseType: .psNext)
-        guard let m2 = resp["_pd"]?.asData else {
-            throw CompanionProtocolError.missingField("_pd")
+        do {
+            // M1: {Method: 0x00, SeqNo: 0x01} — identical to PairSetup.m1() and
+            // independent of the (not-yet-known) PIN.
+            let m1 = TLV8.encode([
+                (TLV8Tag.method, Data([0x00])),
+                (TLV8Tag.sequence, Data([0x01])),
+            ])
+            let resp = try await proto.exchangeAuth(
+                .psStart,
+                [("_pd", .data(m1)), ("_pwTy", .int(1))],
+                responseType: .psNext)
+            guard let m2 = resp["_pd"]?.asData else {
+                throw CompanionProtocolError.missingField("_pd")
+            }
+            self.atvM2 = m2
+            return true
+        } catch {
+            // Don't leak the open connection when the M1/M2 exchange fails.
+            await closeConnection()
+            throw error
         }
-        self.atvM2 = m2
-        return true
     }
 
     /// Complete Pair-Setup with the PIN shown on screen and return the derived

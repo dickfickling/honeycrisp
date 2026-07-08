@@ -180,6 +180,9 @@ public final class NWCompanionTransport: CompanionTransport, @unchecked Sendable
                     if once.take() { cont.resume() }
                 case .failed(let error), .waiting(let error):
                     if once.take() {
+                        // Stop the connection's background retrying; otherwise
+                        // an abandoned NWConnection keeps probing forever.
+                        connection.cancel()
                         cont.resume(throwing: CompanionConnectionError.transportFailed(
                             error.localizedDescription))
                     }

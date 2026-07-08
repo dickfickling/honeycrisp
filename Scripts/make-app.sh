@@ -45,7 +45,13 @@ cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key>
     <string>${MIN_OS}</string>
     <key>LSUIElement</key>
-    <true/>
+    <false/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Honeycrisp discovers and controls Apple TVs on your local network.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_companion-link._tcp</string>
+    </array>
 </dict>
 </plist>
 PLIST

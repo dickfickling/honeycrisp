@@ -172,10 +172,18 @@ private struct DPad: View {
         .clipShape(Circle())
     }
 
+    /// Directional hit zones mirror the old app's geometry: up/down are bands
+    /// spanning the full d-pad width, left/right are columns spanning the full
+    /// height, and the center select circle (drawn later in the ZStack) wins
+    /// where they overlap. The band thickness matches the old 60pt squares so
+    /// the dots stay exactly where they were.
     private func directionButton(_ command: RemoteCommand, alignment: Alignment) -> some View {
-        Button { send(command) } label: {
+        let isVertical = alignment == .top || alignment == .bottom
+        return Button { send(command) } label: {
             ZStack { dot(for: alignment) }
-                .frame(width: edge, height: edge)
+                .frame(
+                    maxWidth: isVertical ? .infinity : edge,
+                    maxHeight: isVertical ? edge : .infinity)
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressableButtonStyle())
