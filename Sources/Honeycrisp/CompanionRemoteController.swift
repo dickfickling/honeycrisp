@@ -73,20 +73,19 @@ public protocol DeviceResolving: Sendable {
     func resolve(identifier: String, timeout: Duration) async throws -> ResolvedAddress
 }
 
-/// Production resolver: browses `_companion-link._tcp` and returns the first
-/// service whose `rpmrtid` identifier matches, or times out.
+/// Production resolver: browses `_companion-link._tcp` TXT records for the
+/// matching `rpmrtid` identifier and resolves only that endpoint, or times out.
 public struct CompanionDeviceResolver: DeviceResolving {
     public init() {}
 
     public func resolve(identifier: String, timeout: Duration) async throws -> ResolvedAddress {
         let discovery = CompanionDiscovery()
-        let stream = discovery.devices()
         defer { discovery.stop() }
 
         return try await withThrowingTaskGroup(of: ResolvedAddress.self) { group in
             group.addTask {
-                for await device in stream where device.identifier == identifier {
-                    return ResolvedAddress(host: device.host, port: device.port)
+                if let (host, port) = await discovery.resolveAddress(identifier: identifier) {
+                    return ResolvedAddress(host: host, port: port)
                 }
                 throw ControllerError.deviceNotFound(identifier)
             }

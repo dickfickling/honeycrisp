@@ -86,6 +86,58 @@ public final class CompanionDiscovery: @unchecked Sendable {
         }
     }
 
+    /// Resolve the current address of the device advertising `identifier`.
+    ///
+    /// Unlike `devices()`, which opens a probe connection to every Companion
+    /// service on the network (HomePods, iPhones, Macs, …) before the caller
+    /// can filter, this browses TXT records only — no connections — until a
+    /// service's `rpmrtid` matches, then resolves just that one endpoint.
+    /// Runs until it finds the device or the surrounding task is cancelled.
+    public func resolveAddress(identifier: String) async -> (host: String, port: UInt16)? {
+        let endpointStream = AsyncStream<NWEndpoint> { continuation in
+            let params = NWParameters()
+            params.includePeerToPeer = true
+            let browser = NWBrowser(
+                for: .bonjourWithTXTRecord(type: Self.serviceType, domain: nil),
+                using: params)
+
+            lock.lock()
+            self.browser = browser
+            lock.unlock()
+
+            browser.browseResultsChangedHandler = { results, _ in
+                for result in results {
+                    guard case .bonjour(let record) = result.metadata,
+                          Self.identifier(fromTXT: record.dictionary) == identifier
+                    else { continue }
+                    continuation.yield(result.endpoint)
+                }
+            }
+            browser.stateUpdateHandler = { state in
+                if case .failed = state { continuation.finish() }
+                if case .cancelled = state { continuation.finish() }
+            }
+            continuation.onTermination = { [weak self] _ in
+                self?.stop()
+            }
+            browser.start(queue: queue)
+        }
+
+        for await endpoint in endpointStream {
+            // The browser only re-yields on result-set changes, so a failed
+            // probe would otherwise never be retried; give each matching
+            // endpoint a few attempts before falling back to waiting.
+            for _ in 0..<3 {
+                if let resolved = await resolve(endpoint) {
+                    stop()
+                    return resolved
+                }
+                if Task.isCancelled { return nil }
+            }
+        }
+        return nil
+    }
+
     /// Stop browsing and release the underlying `NWBrowser`.
     public func stop() {
         lock.lock()
@@ -123,6 +175,12 @@ public final class CompanionDiscovery: @unchecked Sendable {
 
     /// Resolve a Bonjour endpoint to a concrete host/port by briefly opening an
     /// `NWConnection` and reading its resolved remote endpoint.
+    ///
+    /// Every exit path resumes the continuation: `.waiting` counts as failure
+    /// (a probe stuck in `.waiting` otherwise never resumes, and a suspended
+    /// continuation cannot be cancelled — it would wedge any task group
+    /// waiting on it, timeouts included), and a hard deadline backstops states
+    /// the handler never reports (e.g. `.preparing` forever).
     private func resolve(_ endpoint: NWEndpoint) async -> (String, UInt16)? {
         await withCheckedContinuation { (cont: CheckedContinuation<(String, UInt16)?, Never>) in
             let connection = NWConnection(to: endpoint, using: .tcp)
@@ -138,8 +196,20 @@ public final class CompanionDiscovery: @unchecked Sendable {
                     connection.cancel()
                 case .failed, .cancelled:
                     if resumed.take() { cont.resume(returning: nil) }
+                    connection.cancel()
+                case .waiting:
+                    // Transient while mDNS resolves the service endpoint — not
+                    // terminal. The deadline below bounds a probe that never
+                    // leaves this state.
+                    break
                 default:
                     break
+                }
+            }
+            queue.asyncAfter(deadline: .now() + 3) {
+                if resumed.take() {
+                    cont.resume(returning: nil)
+                    connection.cancel()
                 }
             }
             connection.start(queue: queue)
