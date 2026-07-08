@@ -65,6 +65,19 @@ mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
 
 cp "${BIN_PATH}" "${MACOS_DIR}/${APP_NAME}"
 
+echo "==> Generating app icon"
+ICONSET_DIR="${DIST_DIR}/${APP_NAME}.iconset"
+mkdir -p "${ICONSET_DIR}"
+for size in 16 32 128 256 512; do
+    sips -z "${size}" "${size}" Assets/icon.png \
+        --out "${ICONSET_DIR}/icon_${size}x${size}.png" >/dev/null
+    double=$((size * 2))
+    sips -z "${double}" "${double}" Assets/icon.png \
+        --out "${ICONSET_DIR}/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "${ICONSET_DIR}" -o "${RESOURCES_DIR}/AppIcon.icns"
+rm -rf "${ICONSET_DIR}"
+
 cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -78,6 +91,8 @@ cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
     <string>${APP_NAME}</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleShortVersionString</key>
     <string>${VERSION}</string>
     <key>CFBundleVersion</key>
