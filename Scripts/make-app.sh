@@ -65,6 +65,10 @@ mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
 
 cp "${BIN_PATH}" "${MACOS_DIR}/${APP_NAME}"
 
+# Ship the third-party attributions inside the bundle so the MIT notices
+# (pyatv, BigInt) travel with the distributed binary, not just the repo.
+cp THIRD-PARTY-LICENSES.md "${RESOURCES_DIR}/THIRD-PARTY-LICENSES.md"
+
 echo "==> Generating app icon"
 ICONSET_DIR="${DIST_DIR}/${APP_NAME}.iconset"
 mkdir -p "${ICONSET_DIR}"
