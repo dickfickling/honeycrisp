@@ -221,7 +221,9 @@ struct CompanionClientTests {
         await driver.startLoop()
         try await client.connect()
 
-        #expect(await client.powerState == .on)
+        // Connect's power fetch is fire-and-forget; refresh explicitly for a
+        // deterministic starting state.
+        #expect(try await client.refreshPowerState() == .on)
         try await client.powerToggle()
 
         // Toggling from On sends a single Sleep (up) HID event.
@@ -241,7 +243,7 @@ struct CompanionClientTests {
         await driver.startLoop()
         try await client.connect()
 
-        #expect(await client.powerState == .off)
+        #expect(try await client.refreshPowerState() == .off)
         try await client.powerToggle()
 
         // Toggling from Off sends a single Wake (up) HID event.

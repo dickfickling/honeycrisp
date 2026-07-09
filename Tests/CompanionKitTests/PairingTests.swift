@@ -71,6 +71,15 @@ struct PairingTests {
         }
     }
 
+    @Test func leadingZeroPinPairs() throws {
+        // The SRP password must be zero-padded to 4 digits (pyatv zfill(4)):
+        // PIN 0472 as Int 472 formatted "472" would never match the device's
+        // "0472" proof. Both sides derive the password from the Int, so this
+        // only passes if both pad identically.
+        let credentials = try runSetup(clientPin: 472, serverPin: 472)
+        #expect(credentials.ltpk == Self.expectedServerLtpk)
+    }
+
     @Test func pairVerifyDerivesMatchingSessionKeys() throws {
         let credentials = try runSetup()
         let server = makeServer()

@@ -69,10 +69,19 @@ public final class CompanionDiscovery: @unchecked Sendable {
             self.browser = browser
             lock.unlock()
 
-            browser.browseResultsChangedHandler = { [weak self] results, _ in
+            // Handle only added/changed entries: iterating the full result set
+            // would re-probe (TCP-dial) every Companion device on the network
+            // on every mDNS churn event. The first callback delivers the
+            // initial result set as `.added` changes.
+            browser.browseResultsChangedHandler = { [weak self] _, changes in
                 guard let self else { return }
-                for result in results {
-                    self.handle(result, continuation: continuation)
+                for change in changes {
+                    switch change {
+                    case .added(let result), .changed(_, let result, _):
+                        self.handle(result, continuation: continuation)
+                    default:
+                        break
+                    }
                 }
             }
             browser.stateUpdateHandler = { state in

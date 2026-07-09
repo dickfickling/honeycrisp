@@ -177,6 +177,10 @@ public final class CompanionRemoteController: RemoteControlling {
     /// Monotonic ticket per `send`; commands that waited out a connect only
     /// fire if no newer command arrived meanwhile (see `send`).
     @ObservationIgnored private var sendTicket = 0
+    /// Bumped by `teardown()`. A send that started before a teardown (device
+    /// switch/removal) must not reconnect this discarded controller — that
+    /// would resurrect a session to the old device that nothing ever closes.
+    @ObservationIgnored private var generation = 0
 
     public init(
         device: StoredDevice,
@@ -200,6 +204,7 @@ public final class CompanionRemoteController: RemoteControlling {
     public func send(_ command: RemoteCommand) async throws {
         sendTicket += 1
         let ticket = sendTicket
+        let gen = generation
         if client == nil {
             // Initial connect failures are surfaced directly (there is no
             // established session to reconnect).
@@ -217,6 +222,10 @@ public final class CompanionRemoteController: RemoteControlling {
         } catch {
             // The session dropped mid-command: reconnect (fresh discovery +
             // connect) and retry exactly once, then surface any failure.
+            // Unless this controller was torn down (device switch/removal)
+            // while the command was in flight — reconnecting then would
+            // resurrect a session to the old device.
+            guard gen == generation else { throw CompanionClient.ClientError.notConnected }
             logger.info("Command \(command.rawValue, privacy: .public) failed; reconnecting to retry once")
             await teardown()
             do {
@@ -231,6 +240,7 @@ public final class CompanionRemoteController: RemoteControlling {
     }
 
     public func teardown() async {
+        generation += 1
         if let task = connectTask {
             connectTask = nil
             task.cancel()

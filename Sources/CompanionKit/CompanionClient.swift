@@ -104,8 +104,10 @@ public actor CompanionClient {
 
         // Best-effort power initialization, mirroring pyatv's
         // `CompanionPower.initialize` (swallows failures — some devices do not
-        // answer `FetchAttentionState`).
-        await initializePower(proto)
+        // answer `FetchAttentionState`). Deliberately NOT awaited: blocking
+        // here would add that request's full timeout to every connect (and to
+        // every button press coalesced behind the connect) on such devices.
+        Task { await self.initializePower(proto) }
     }
 
     /// Tear down the session and close the connection.
@@ -127,12 +129,16 @@ public actor CompanionClient {
         subscribedEvents.removeAll()
 
         if let sid = await proto.sessionID {
+            // Short timeout: disconnect often runs precisely because the
+            // session is dead (half-open TCP after the TV sleeps), and
+            // waiting the default 5s here would stall every reconnect.
             _ = try? await proto.sendAndWait(
                 identifier: "_sessionStop",
                 content: .dictionary([
                     (.string("_srvT"), .string("com.apple.tvremoteservices")),
                     (.string("_sid"), .int(sid)),
-                ]))
+                ]),
+                timeout: 1.0)
         }
 
         await conn.close()
@@ -247,8 +253,16 @@ public actor CompanionClient {
 
     /// Toggle power based on the current state, mirroring the old Honeycrisp
     /// server's `power_toggle`: turn off only when known-on, otherwise turn on.
+    ///
+    /// The connect-time power fetch is fire-and-forget (so it can't stall
+    /// bring-up), so the cache may still be `.unknown` here; fetch on demand in
+    /// that case rather than blindly waking an already-on TV.
     public func powerToggle() async throws {
-        if _powerState == .on {
+        var state = _powerState
+        if state == .unknown {
+            state = (try? await refreshPowerState()) ?? .unknown
+        }
+        if state == .on {
             try await turnOff()
         } else {
             try await turnOn()

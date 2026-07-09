@@ -45,6 +45,8 @@ public final class PairingModel {
 
     @ObservationIgnored private var discoveredByID: [String: DiscoveredDevice] = [:]
     @ObservationIgnored private var scanTask: Task<Void, Never>?
+    /// Set when the wizard window closes; blocks late scan restarts.
+    @ObservationIgnored private var isShutDown = false
     @ObservationIgnored private var discovery: CompanionDiscovery?
     @ObservationIgnored private var pairer: CompanionPairer?
 
@@ -98,6 +100,7 @@ public final class PairingModel {
     // MARK: - Scanning
 
     public func startScan() {
+        guard !isShutDown else { return }
         stopScan()
         phase = .scanning
         errorMessage = nil
@@ -152,7 +155,10 @@ public final class PairingModel {
             // Close any half-open connection before dropping the pairer.
             await pairer.cancel()
             self.pairer = nil
-            startScan()
+            // begin() also throws when the window closed mid-begin (shutdown
+            // cancelled the pairer); restarting the scan then would leave an
+            // orphaned NWBrowser running with no owner to stop it.
+            if !isShutDown { startScan() }
         }
     }
 
@@ -183,6 +189,7 @@ public final class PairingModel {
     /// Tear down everything when the wizard window closes: stop scanning and
     /// cancel any mid-flight pairing session so its connection is released.
     public func shutdown() async {
+        isShutDown = true
         stopScan()
         await pairer?.cancel()
         pairer = nil

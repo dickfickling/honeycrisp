@@ -51,7 +51,10 @@ final class FakeCompanionServer {
 
     private func pairSetupM2() -> Data {
         let session = SRPServerSession(
-            context: SRPContext(username: "Pair-Setup", password: String(pin)),
+            // Real devices know their displayed PIN as a 4-digit string
+            // (pyatv pads with zfill(4)); mirror that so leading-zero PINs
+            // are exercised faithfully.
+            context: SRPContext(username: "Pair-Setup", password: String(format: "%04d", pin)),
             privateKey: srpPrivate,
             salt: srpSalt
         )

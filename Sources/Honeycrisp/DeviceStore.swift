@@ -66,12 +66,16 @@ public final class DeviceStore {
         else {
             return []
         }
-        return entries
-            .map { StoredDevice(id: $0.key, name: $0.value.name, credentials: $0.value.credentials) }
-            .sorted { lhs, rhs in
-                if lhs.name == rhs.name { return lhs.id < rhs.id }
-                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-            }
+        return Self.displaySorted(
+            entries.map { StoredDevice(id: $0.key, name: $0.value.name, credentials: $0.value.credentials) })
+    }
+
+    /// The stable display order shared by `load`, `upsert`, and `remove`.
+    private static func displaySorted(_ devices: [StoredDevice]) -> [StoredDevice] {
+        devices.sorted { lhs, rhs in
+            if lhs.name == rhs.name { return lhs.id < rhs.id }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
     }
 
     /// Atomically persists the full device list.
@@ -96,7 +100,9 @@ public final class DeviceStore {
             devices.append(device)
         }
         try save(devices)
-        return load()
+        // Return the in-memory list, not a re-read: load() maps transient read
+        // failures to [], which would blank the UI even though the save worked.
+        return Self.displaySorted(devices)
     }
 
     /// Removes a device by identifier and returns the new list. Clears the
@@ -109,7 +115,7 @@ public final class DeviceStore {
         if activeDeviceID == id {
             activeDeviceID = nil
         }
-        return load()
+        return Self.displaySorted(devices)
     }
 
     // MARK: - Active device

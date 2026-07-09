@@ -356,9 +356,11 @@ public actor CompanionProtocolLayer {
 // MARK: - OPACKValue access helpers
 
 extension OPACKValue {
-    /// The value as an `Int`, if it is an integer.
+    /// The value as an `Int`, if it is an integer that fits. `Int(exactly:)`
+    /// rather than `Int(_:)`: an inbound 8-byte value above Int.max must be
+    /// rejected, not trap — frames are attacker-influenced before encryption.
     var asInt: Int? {
-        if case .int(let v, _) = self { return Int(v) }
+        if case .int(let v, _) = self { return Int(exactly: v) }
         return nil
     }
 

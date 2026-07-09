@@ -38,6 +38,8 @@ public actor CompanionConnection {
     private var session: CompanionSession?
     private var readTask: Task<Void, Never>?
     private var isConnected = false
+    /// Tail of the ordered write chain (see `send`).
+    private var sendTail: Task<Void, Error>?
 
     private let frameStream: AsyncStream<CompanionFrame>
     private let frameContinuation: AsyncStream<CompanionFrame>.Continuation
@@ -81,7 +83,22 @@ public actor CompanionConnection {
             payload = try session.encrypt(payload, aad: header)
         }
 
-        try await transport.send(header + payload)
+        // Encryption above consumed a nonce in actor order, but awaiting the
+        // transport directly would release the actor before the write is
+        // enqueued — a second send could encrypt with the NEXT nonce and reach
+        // the socket FIRST, and the device's Poly1305 check on the
+        // out-of-order counter would kill the session. Chain writes so wire
+        // order always matches encryption order; each sender still awaits (and
+        // surfaces errors from) only its own write.
+        let data = header + payload
+        let previous = sendTail
+        let write = Task { [transport] in
+            _ = try? await previous?.value
+            try await transport.send(data)
+        }
+        sendTail = write
+        defer { if sendTail == write { sendTail = nil } }
+        try await write.value
     }
 
     /// Close the connection and finish the `frames` stream.

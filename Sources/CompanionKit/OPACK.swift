@@ -313,7 +313,9 @@ public enum OPACK {
         }
 
         mutating func readBytes(_ n: Int) throws -> [UInt8] {
-            guard n >= 0, pos + n <= bytes.count else { throw OPACKError.truncatedData }
+            // `n <= bytes.count - pos` rather than `pos + n <= bytes.count`:
+            // a hostile length near Int.max would make the addition trap.
+            guard n >= 0, n <= bytes.count - pos else { throw OPACKError.truncatedData }
             let slice = Array(bytes[pos..<(pos + n)])
             pos += n
             return slice
@@ -362,14 +364,14 @@ public enum OPACK {
                 value = .string(try decodeUTF8(try reader.readBytes(length)))
             } else if tag > 0x60 && tag <= 0x64 {
                 let nBytes = Int(tag & 0x0F)
-                let length = Int(leToUInt64(try reader.readBytes(nBytes)))
+                let length = try readLength(&reader, bytes: nBytes)
                 value = .string(try decodeUTF8(try reader.readBytes(length)))
             } else if tag >= 0x70 && tag <= 0x90 {
                 let length = Int(tag) - 0x70
                 value = .data(Data(try reader.readBytes(length)))
             } else if tag >= 0x91 && tag <= 0x94 {
                 let nBytes = 1 << (Int(tag & 0x0F) - 1)
-                let length = Int(leToUInt64(try reader.readBytes(nBytes)))
+                let length = try readLength(&reader, bytes: nBytes)
                 value = .data(Data(try reader.readBytes(length)))
             } else if (tag & 0xF0) == 0xD0 {
                 let count = Int(tag & 0x0F)
@@ -424,6 +426,16 @@ public enum OPACK {
         }
 
         return value
+    }
+
+    /// Read a little-endian length prefix, rejecting values that don't fit in
+    /// Int (a wire length >= 2^63 would otherwise trap the Int(_:) conversion —
+    /// remotely triggerable during the plaintext pairing phase).
+    private static func readLength(_ reader: inout Reader, bytes nBytes: Int) throws -> Int {
+        guard let length = Int(exactly: leToUInt64(try reader.readBytes(nBytes))) else {
+            throw OPACKError.truncatedData
+        }
+        return length
     }
 
     private static func decodeUTF8(_ bytes: [UInt8]) throws -> String {

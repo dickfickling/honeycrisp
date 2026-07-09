@@ -118,9 +118,9 @@ public final class PairSetup {
     private var session: SRPClientSession?
 
     /// - Parameters:
-    ///   - pin: the PIN shown on screen. Formatted as `String(pin)` to match
-    ///     pyatv's canonical `str(pin)` (note: nodeatv zero-pads to 4 digits;
-    ///     pyatv does not, so this follows pyatv).
+    ///   - pin: the PIN shown on screen. Zero-padded to 4 digits to match
+    ///     pyatv's `str(pin).zfill(4)` (companion/pairing.py:77) — without the
+    ///     padding, any PIN with a leading zero could never pair.
     ///   - signingSeed: 32-byte Ed25519 seed (injected for deterministic
     ///     tests); random if omitted.
     ///   - pairingId: controller identifier bytes; a random UUID if omitted.
@@ -158,7 +158,7 @@ public final class PairSetup {
         let salt = try PairingError.require(tlv, .salt)
         let atvPubKey = try PairingError.require(tlv, .publicKey)
 
-        let context = SRPContext(username: username, password: String(pin))
+        let context = SRPContext(username: username, password: String(format: "%04d", pin))
         let session = SRPClientSession(context: context, privateKey: signingSeed)
         try session.process(serverPublicKey: atvPubKey, salt: salt)
         self.session = session

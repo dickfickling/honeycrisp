@@ -266,6 +266,23 @@ import Testing
         #expect(try OPACK.unpack(packed) == .bool(true))
     }
 
+    @Test func hugeLengthPrefixThrowsNotTraps() throws {
+        // A tag-0x94 byte-string with an 8-byte length whose top bit is set
+        // (>= 2^63) must surface as a thrown error, not trap the Int(_:)
+        // conversion — these frames are unauthenticated during pairing.
+        let hostile = hexData("94 ffffffffffffffff")
+        #expect(throws: OPACKError.self) {
+            _ = try OPACK.unpack(hostile)
+        }
+        // And an 8-byte integer above Int.max stays a UInt64, decoding without
+        // trapping. asInt then rejects it (nil) rather than trapping Int(_:),
+        // while asUInt64 preserves it.
+        let big = try OPACK.unpack(hexData("33 ffffffffffffffff"))
+        #expect(big == .int(.max, sizeHint: 8))
+        #expect(big.asInt == nil)
+        #expect(big.asUInt64 == UInt64.max)
+    }
+
     @Test func golden() throws {
         // Port of test_opack.py::test_golden / opack.test.ts's roundtrip
         // test: pack a realistic nested Companion "_systemInfo" payload and
