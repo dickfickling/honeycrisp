@@ -17,7 +17,7 @@ struct HoneycrispApp: App {
                 .environment(appState)
         } label: {
             Label("Honeycrisp", systemImage: "appletvremote.gen4.fill")
-                .task { appDelegate.openRemote = { openWindow(id: WindowID.remote) } }
+                .task { appDelegate.openRemote = { showRemote(openWindow) } }
         }
 
         // The remote itself: fixed 200x500, no title bar, draggable by background.
@@ -34,7 +34,7 @@ struct HoneycrispApp: App {
                 .hiddenWindowToolbarBackground()
                 // Belt-and-braces: also wire the delegate from here in case a
                 // menu-bar style ever stops hosting the label eagerly.
-                .task { appDelegate.openRemote = { openWindow(id: WindowID.remote) } }
+                .task { appDelegate.openRemote = { showRemote(openWindow) } }
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
@@ -60,6 +60,29 @@ enum WindowID {
     static let remote = "remote"
     static let addDevice = "addDevice"
     static let manageDevices = "manageDevices"
+}
+
+/// Bring the remote window to the front, activating the app first.
+///
+/// A menu-bar-extra click does not make the app active, and macOS won't front a
+/// window belonging to an inactive app — so `openWindow` alone leaves an
+/// already-open-but-occluded remote hidden. Activate, open (creates/reopens if
+/// it was closed), then explicitly order the existing window front to cover the
+/// occluded/minimized case.
+@MainActor
+func showRemote(_ openWindow: OpenWindowAction) {
+    // `ignoringOtherApps: true` (deprecated but not replaced by an equally
+    // forceful API): plain `activate()` only foregrounds when the system
+    // permits, which made "Show Remote" work only sometimes — the window would
+    // order-front behind another app that never yielded activation.
+    NSApp.activate(ignoringOtherApps: true)
+    openWindow(id: WindowID.remote)
+    if let window = NSApp.windows.first(where: {
+        $0.identifier?.rawValue == WindowID.remote
+    }) {
+        window.deminiaturize(nil)
+        window.makeKeyAndOrderFront(nil)
+    }
 }
 
 // MARK: - App delegate
@@ -102,7 +125,7 @@ private struct TrayMenu: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Button("Show Remote") { openWindow(id: WindowID.remote) }
+        Button("Show Remote") { showRemote(openWindow) }
 
         Divider()
 
@@ -197,6 +220,9 @@ private struct RemoteWindowConfigurator: NSViewRepresentable {
 
     private func configure(_ window: NSWindow?) {
         guard let window else { return }
+        // Tag the window so `showRemote` can locate it in NSApp.windows to
+        // order it front when it's already open but occluded/minimized.
+        window.identifier = NSUserInterfaceItemIdentifier(WindowID.remote)
         // The window keeps `.titled` (borderless windows lose keyboard focus in
         // SwiftUI even with canBecomeKey patched); the title bar is fully
         // transparent and the container-background material paints under it.
