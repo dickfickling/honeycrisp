@@ -87,7 +87,9 @@ struct RemoteView: View {
         .focusEffectDisabled()
         .focused($focused)
         .onAppear { focused = true }
-        .onKeyPress(phases: .down) { press in handleKey(press) }
+        // Include `.repeat` so holding a key (arrows, volume) repeats the
+        // command via the OS key-repeat stream, not just once on key-down.
+        .onKeyPress(phases: [.down, .repeat]) { press in handleKey(press) }
     }
 
     private var header: some View {

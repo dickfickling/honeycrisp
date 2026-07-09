@@ -1,7 +1,10 @@
 .build/
 dist/
 .DS_Store
-.claude/
+# ~/.gitignore_global ignores all of .claude/; re-include the shared skills.
+!.claude/
+.claude/*
+!.claude/skills/
 .superpowers/
 *.xcodeproj
 .swiftpm/
