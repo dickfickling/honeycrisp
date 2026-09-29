@@ -149,6 +149,7 @@ struct DeviceStoreTests {
 
         init(device: StoredDevice) { self.device = device }
         func send(_ command: RemoteCommand) async throws {}
+        func sendText(_ text: String) async throws {}
         func connect() async throws { connectCount += 1 }
     }
 

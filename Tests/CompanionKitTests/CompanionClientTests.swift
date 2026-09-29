@@ -87,6 +87,7 @@ struct CompanionClientTests {
         credentials: HAPCredentials,
         attention: Int = 3,
         holdDuration: Double = 1.0,
+        textInputData: Data? = nil,
         recorder: Recorder
     ) -> (CompanionClient, CompanionServerDriver) {
         let c2s = ByteChannel()
@@ -99,8 +100,12 @@ struct CompanionClientTests {
                 [("_i", .string(id)), ("_t", .int(3)), ("_x", .int(UInt64(x))), ("_c", content)]
             }
             switch id {
-            case "_systemInfo", "_hidC", "_sessionStop":
+            case "_systemInfo", "_hidC", "_sessionStop", "_tiStop":
                 return ok(.dictionary([]))
+            case "_tiStart":
+                // Like a real TV, `_tiD` is only present while a text field is focused.
+                guard let textInputData else { return ok(.dictionary([])) }
+                return ok(.dictionary([(.string("_tiD"), .data(textInputData))]))
             case "_sessionStart":
                 return ok(.dictionary([(.string("_sid"), .int(0x1122_3344))]))
             case "FetchAttentionState":
@@ -261,6 +266,108 @@ struct CompanionClientTests {
         #expect(CompanionClient.powerState(fromSystemStatus: 3) == .on)    // Awake
         #expect(CompanionClient.powerState(fromSystemStatus: 4) == .on)    // Idle
         #expect(CompanionClient.powerState(fromSystemStatus: 0) == .unknown)
+    }
+
+    // MARK: - Text input
+
+    static let textSessionUUID = Data(repeating: 0xAB, count: 16)
+
+    /// `_tiD` shaped like pyatv's fake device: raw session UUID bytes plus the
+    /// focused field's current text.
+    private func focusedFieldArchive(text: String) throws -> Data {
+        try RTIArchive.encode(
+            top: ["sessionUUID": RTIArchive.uid(1), "documentState": RTIArchive.uid(2)],
+            objects: [
+                "$null",
+                Self.textSessionUUID,
+                ["docSt": RTIArchive.uid(3)],
+                ["contextBeforeInput": RTIArchive.uid(4)],
+                text,
+            ])
+    }
+
+    @Test func textSetClearsThenInsertsIntoFocusedField() async throws {
+        let credentials = try mintCredentials()
+        let recorder = Recorder()
+        let (client, driver) = makeClient(
+            credentials: credentials,
+            textInputData: try focusedFieldArchive(text: "old"),
+            recorder: recorder)
+        await driver.startLoop()
+        try await client.connect()
+
+        let first = try await client.textSet("héllo 🍎")
+        let second = try await client.textSet("again")
+        // `_tiC` events are fire-and-forget; a round-trip afterwards
+        // guarantees the fake accessory has processed them.
+        try await client.refreshPowerState()
+
+        #expect(first == "héllo 🍎")
+        #expect(second == "again")
+        let textMessages = recorder.requests.filter { $0["_i"]?.asString?.hasPrefix("_ti") == true }
+        #expect(textMessages.map { $0["_i"]?.asString } == [
+            "_tiStart", "_tiC", "_tiC",
+            "_tiStop", "_tiStart", "_tiC", "_tiC",
+        ])
+
+        let operations = textMessages
+            .filter { $0["_i"]?.asString == "_tiC" }
+            .compactMap { $0["_c"]?.asStringDictionary }
+        #expect(operations.allSatisfy { $0["_tiV"]?.asInt == 1 })
+        let payloads = operations.compactMap { $0["_tiD"]?.asData }
+        #expect(payloads.count == 4)
+
+        let clear = try RTIArchive.readProperties(payloads[0], [
+            ["textOperations", "targetSessionUUID", "NS.uuidbytes"],
+            ["textOperations", "textToAssert"],
+            ["textOperations", "keyboardOutput", "insertionText"],
+        ])
+        #expect(clear[0] as? Data == Self.textSessionUUID)
+        #expect(clear[1] as? String == "")
+        #expect(clear[2] == nil)
+
+        let insert = try RTIArchive.readProperties(payloads[1], [
+            ["textOperations", "targetSessionUUID", "NS.uuidbytes"],
+            ["textOperations", "textToAssert"],
+            ["textOperations", "keyboardOutput", "insertionText"],
+        ])
+        #expect(insert[0] as? Data == Self.textSessionUUID)
+        #expect(insert[1] == nil)
+        #expect(insert[2] as? String == "héllo 🍎")
+
+        await client.disconnect()
+        await driver.stop()
+    }
+
+    @Test func textSetWithoutFocusedFieldReturnsNil() async throws {
+        let credentials = try mintCredentials()
+        let recorder = Recorder()
+        let (client, driver) = makeClient(credentials: credentials, recorder: recorder)
+        await driver.startLoop()
+        try await client.connect()
+
+        let result = try await client.textSet("hello")
+        try await client.refreshPowerState()
+
+        #expect(result == nil)
+        #expect(!recorder.requests.contains { $0["_i"]?.asString == "_tiC" })
+
+        await client.disconnect()
+        await driver.stop()
+    }
+
+    @Test func readPropertiesFollowsReferencesAndMissesToNil() throws {
+        let archive = try focusedFieldArchive(text: "<key>CF$UID</key> & more")
+        let properties = try RTIArchive.readProperties(archive, [
+            ["sessionUUID"],
+            ["documentState", "docSt", "contextBeforeInput"],
+            ["documentState", "missing"],
+            ["nope"],
+        ])
+        #expect(properties[0] as? Data == Self.textSessionUUID)
+        #expect(properties[1] as? String == "<key>CF$UID</key> & more")
+        #expect(properties[2] == nil)
+        #expect(properties[3] == nil)
     }
 
     // MARK: - Error paths

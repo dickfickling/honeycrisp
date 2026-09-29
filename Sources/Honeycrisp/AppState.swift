@@ -121,6 +121,23 @@ public final class AppState {
         }
     }
 
+    /// Replace the text in the TV's focused text field. Unlike `send`, errors
+    /// are thrown so the text box can show them.
+    public func sendText(_ text: String) async throws {
+        guard let remote else {
+            logger.info("sendText ignored: no active device")
+            return
+        }
+        logger.info("sendText(\(text.count, privacy: .public) chars) dispatched")
+        do {
+            try await remote.sendText(text)
+            logger.info("sendText completed")
+        } catch {
+            logger.error("sendText failed: \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
+    }
+
     /// Fire-and-forget command dispatch. Errors are logged, not surfaced.
     public func send(_ command: RemoteCommand) {
         guard let remote else {

@@ -42,6 +42,8 @@ public protocol RemoteControlling: AnyObject {
     /// tooltip. `nil` when there is nothing to report.
     var lastError: String? { get }
     func send(_ command: RemoteCommand) async throws
+    /// Replace the text in the TV's focused text field (e.g. a search box).
+    func sendText(_ text: String) async throws
     /// Establish the session eagerly (e.g. at launch or after a device switch)
     /// so the first button press doesn't pay discovery + handshake latency.
     /// Idempotent: a no-op when already connected or connecting.
@@ -72,5 +74,10 @@ public final class MockRemoteController: RemoteControlling {
     public func send(_ command: RemoteCommand) async throws {
         logger.info("MockRemoteController.send(\(command.rawValue, privacy: .public))")
         print("MockRemoteController.send(\(command.rawValue))")
+    }
+
+    public func sendText(_ text: String) async throws {
+        logger.info("MockRemoteController.sendText(\(text.count) chars)")
+        print("MockRemoteController.sendText(\(text))")
     }
 }

@@ -53,11 +53,20 @@ private struct PressableButtonStyle: ButtonStyle {
 struct RemoteView: View {
     @Environment(AppState.self) private var appState
     @FocusState private var focused: Bool
+    @State private var showingKeyboard = false
+    @State private var text = ""
+    @State private var textError: String?
+    @FocusState private var textFieldFocused: Bool
     private let logger = Logger(subsystem: "us.fickling.honeycrisp2", category: "RemoteView")
 
     var body: some View {
         VStack(spacing: 0) {
             header
+
+            if showingKeyboard {
+                keyboardField
+                    .padding(.top, 8)
+            }
 
             Spacer(minLength: 12)
             DPad { appState.send($0) }
@@ -109,6 +118,15 @@ struct RemoteView: View {
             }
             .help(appState.remote?.lastError ?? statusText)
             Spacer()
+            Button { showingKeyboard ? closeKeyboard() : openKeyboard() } label: {
+                Image(systemName: "keyboard")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Palette.subtle)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PressableButtonStyle())
+            .help("Type on the TV (K)")
             Button { appState.send(.powerToggle) } label: {
                 Image(systemName: "power")
                     .font(.system(size: 14, weight: .medium))
@@ -118,6 +136,47 @@ struct RemoteView: View {
                     .contentShape(Circle())
             }
             .buttonStyle(PressableButtonStyle())
+        }
+    }
+
+    /// Text box for the TV's focused text field. Return replaces the TV
+    /// field's text and goes back to the remote; Escape just goes back.
+    private var keyboardField: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            TextField("Type on TV", text: $text)
+                .textFieldStyle(.roundedBorder)
+                .focused($textFieldFocused)
+                .onAppear { textFieldFocused = true }
+                .onSubmit(submitText)
+                .onExitCommand(perform: closeKeyboard)
+            if let textError {
+                Text(textError)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private func openKeyboard() {
+        showingKeyboard = true
+    }
+
+    private func closeKeyboard() {
+        showingKeyboard = false
+        text = ""
+        textError = nil
+        focused = true
+    }
+
+    private func submitText() {
+        let submitted = text
+        Task {
+            do {
+                try await appState.sendText(submitted)
+                closeKeyboard()
+            } catch {
+                textError = error.localizedDescription
+            }
         }
     }
 
@@ -143,7 +202,13 @@ struct RemoteView: View {
     }
 
     private func handleKey(_ press: KeyPress) -> KeyPress.Result {
+        // Keys typed into the text box belong to it, not the remote.
+        if textFieldFocused { return .ignored }
         logger.info("keyPress received: \(press.characters.unicodeScalars.map { String(format: "U+%04X", $0.value) }.joined(), privacy: .public)")
+        if press.characters == "k" {
+            openKeyboard()
+            return .handled
+        }
         let command: RemoteCommand?
         switch press.key {
         case .upArrow: command = .up

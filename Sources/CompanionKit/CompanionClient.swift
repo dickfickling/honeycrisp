@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Wraps the lower CompanionKit layers (`CompanionConnection` ->
 /// `CompanionProtocolLayer`) and exposes the surface a remote-control app needs:
-/// connect/disconnect, HID button presses, and power control. It is an `actor`
+/// connect/disconnect, HID button presses, text input, and power control. It is an `actor`
 /// so a thin `@MainActor` adapter (the app's `RemoteControlling`) can call its
 /// `async` methods directly.
 ///
@@ -50,6 +50,9 @@ public actor CompanionClient {
     private var _state: ConnectionState = .disconnected
     private var _powerState: PowerState = .unknown
     private var subscribedEvents: [String] = []
+    /// Whether a `_tiStart` text-input session is open (so `_tiStop` has
+    /// something to stop).
+    private var textInputStarted = false
 
     private let stateStream: AsyncStream<ConnectionState>
     private let stateContinuation: AsyncStream<ConnectionState>.Continuation
@@ -145,6 +148,7 @@ public actor CompanionClient {
         connection = nil
         self.proto = nil
         _powerState = .unknown
+        textInputStarted = false
         setState(.disconnected)
     }
 
@@ -232,6 +236,68 @@ public actor CompanionClient {
     }
     public func volumeDown() async throws {
         try await pressButton(.volumeDown)
+    }
+
+    // MARK: - Text input
+
+    /// Replace the text in the TV's focused text field (pyatv
+    /// `CompanionKeyboard.text_set`). Returns the field's new text, or `nil`
+    /// when no text field is focused on the TV.
+    @discardableResult
+    public func textSet(_ text: String) async throws -> String? {
+        try await textInputCommand(text, clearPreviousInput: true)
+    }
+
+    /// Port of pyatv `CompanionAPI.text_input_command`.
+    private func textInputCommand(_ text: String, clearPreviousInput: Bool) async throws -> String? {
+        let proto = try requireProto()
+
+        // Restart the session so the `_tiStart` reply carries up-to-date
+        // session data. pyatv opens the session at connect and so always
+        // stops first; here it opens lazily, and only a started session is
+        // stopped (the TV may not answer a stray `_tiStop`).
+        if textInputStarted {
+            _ = try await proto.sendAndWait(identifier: "_tiStop")
+            textInputStarted = false
+        }
+        let response = try await proto.sendAndWait(identifier: "_tiStart")
+        textInputStarted = true
+
+        guard let tiData = response["_c"]?.asStringDictionary?["_tiD"]?.asData else {
+            return nil
+        }
+        let properties = try RTIArchive.readProperties(tiData, [
+            ["sessionUUID"],
+            ["documentState", "docSt", "contextBeforeInput"],
+        ])
+        guard let sessionUUID = properties[0] as? Data else {
+            throw CompanionProtocolError.missingField("sessionUUID")
+        }
+        var currentText = properties[1] as? String ?? ""
+
+        if clearPreviousInput {
+            let payload = try RTIArchive.clearTextPayload(sessionUUID: sessionUUID)
+            try await proto.sendEvent(
+                identifier: "_tiC",
+                content: .dictionary([
+                    (.string("_tiV"), .int(1)),
+                    (.string("_tiD"), .data(payload)),
+                ]))
+            currentText = ""
+        }
+
+        if !text.isEmpty {
+            let payload = try RTIArchive.inputTextPayload(sessionUUID: sessionUUID, text: text)
+            try await proto.sendEvent(
+                identifier: "_tiC",
+                content: .dictionary([
+                    (.string("_tiV"), .int(1)),
+                    (.string("_tiD"), .data(payload)),
+                ]))
+            currentText += text
+        }
+
+        return currentText
     }
 
     // MARK: - Power

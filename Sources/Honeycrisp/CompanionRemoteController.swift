@@ -26,6 +26,8 @@ public protocol CompanionControlling: Sendable {
     func volumeUp() async throws
     func volumeDown() async throws
     func powerToggle() async throws
+    /// Replace the focused text field's text; `nil` when none is focused.
+    func textSet(_ text: String) async throws -> String?
 }
 
 /// Production `CompanionControlling`, forwarding to a real `CompanionClient`.
@@ -52,6 +54,7 @@ public struct LiveCompanionClient: CompanionControlling {
     public func volumeUp() async throws { try await client.volumeUp() }
     public func volumeDown() async throws { try await client.volumeDown() }
     public func powerToggle() async throws { try await client.powerToggle() }
+    public func textSet(_ text: String) async throws -> String? { try await client.textSet(text) }
 }
 
 /// A resolved network address for a device.
@@ -137,6 +140,8 @@ public enum ControllerError: Error, Equatable, Sendable, LocalizedError {
     case deviceNotFound(String)
     /// The stored credentials string could not be parsed.
     case invalidCredentials
+    /// Text was sent while no text field was focused on the TV.
+    case noFocusedTextField
 
     public var errorDescription: String? {
         switch self {
@@ -144,6 +149,8 @@ public enum ControllerError: Error, Equatable, Sendable, LocalizedError {
             return "Device not found on the network"
         case .invalidCredentials:
             return "Stored credentials are invalid"
+        case .noFocusedTextField:
+            return "No text field is selected on the TV"
         }
     }
 }
@@ -202,6 +209,22 @@ public final class CompanionRemoteController: RemoteControlling {
     // MARK: - RemoteControlling
 
     public func send(_ command: RemoteCommand) async throws {
+        try await perform(command.rawValue) { try await Self.dispatch(command, to: $0) }
+    }
+
+    public func sendText(_ text: String) async throws {
+        var focused = true
+        try await perform("text") { focused = try await $0.textSet(text) != nil }
+        // Not a session failure, so outside `perform`: reconnecting would
+        // not help, and `lastError` is for connection problems.
+        guard focused else { throw ControllerError.noFocusedTextField }
+    }
+
+    /// Run `operation` against the client, connecting lazily first.
+    private func perform(
+        _ label: String,
+        _ operation: (any CompanionControlling) async throws -> Void
+    ) async throws {
         sendTicket += 1
         let ticket = sendTicket
         let gen = generation
@@ -213,12 +236,13 @@ public final class CompanionRemoteController: RemoteControlling {
             // fire at once now (a burst of stale d-pad moves into the TV).
             // Only the newest one survives; the rest drop silently.
             guard ticket == sendTicket else {
-                logger.info("Dropping superseded \(command.rawValue, privacy: .public) queued during connect")
+                logger.info("Dropping superseded \(label, privacy: .public) queued during connect")
                 return
             }
         }
         do {
-            try await dispatch(command)
+            guard let client else { throw CompanionClient.ClientError.notConnected }
+            try await operation(client)
         } catch {
             // The session dropped mid-command: reconnect (fresh discovery +
             // connect) and retry exactly once, then surface any failure.
@@ -226,12 +250,13 @@ public final class CompanionRemoteController: RemoteControlling {
             // while the command was in flight — reconnecting then would
             // resurrect a session to the old device.
             guard gen == generation else { throw CompanionClient.ClientError.notConnected }
-            logger.info("Command \(command.rawValue, privacy: .public) failed; reconnecting to retry once")
+            logger.info("Command \(label, privacy: .public) failed; reconnecting to retry once")
             await teardown()
             do {
                 try await connect()
                 guard ticket == sendTicket else { return }
-                try await dispatch(command)
+                guard let client else { throw CompanionClient.ClientError.notConnected }
+                try await operation(client)
             } catch {
                 lastError = Self.describe(error)
                 throw error
@@ -323,8 +348,7 @@ public final class CompanionRemoteController: RemoteControlling {
         addressCache.setAddress(address, for: device.id)
     }
 
-    private func dispatch(_ command: RemoteCommand) async throws {
-        guard let client else { throw CompanionClient.ClientError.notConnected }
+    private static func dispatch(_ command: RemoteCommand, to client: any CompanionControlling) async throws {
         switch command {
         case .up: try await client.up()
         case .down: try await client.down()

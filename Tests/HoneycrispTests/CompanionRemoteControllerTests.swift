@@ -20,12 +20,14 @@ private actor FakeCompanionClient: CompanionControlling {
     private var dispatchFailures: Int
     private let holdConnect: Bool
     private var heldConnects: [CheckedContinuation<Void, Never>] = []
+    private let textFieldFocused: Bool
 
-    init(dispatchFailures: Int = 0, holdConnect: Bool = false) {
+    init(dispatchFailures: Int = 0, holdConnect: Bool = false, textFieldFocused: Bool = true) {
         (connectionStates, continuation) =
             AsyncStream.makeStream(of: CompanionClient.ConnectionState.self)
         self.dispatchFailures = dispatchFailures
         self.holdConnect = holdConnect
+        self.textFieldFocused = textFieldFocused
     }
 
     nonisolated func emit(_ state: CompanionClient.ConnectionState) {
@@ -65,6 +67,10 @@ private actor FakeCompanionClient: CompanionControlling {
     func volumeUp() async throws { try record("volumeUp") }
     func volumeDown() async throws { try record("volumeDown") }
     func powerToggle() async throws { try record("powerToggle") }
+    func textSet(_ text: String) async throws -> String? {
+        try record("text:\(text)")
+        return textFieldFocused ? text : nil
+    }
 }
 
 private struct FakeResolver: DeviceResolving {
@@ -110,6 +116,7 @@ private actor FailingConnectClient: CompanionControlling {
     func volumeUp() async throws {}
     func volumeDown() async throws {}
     func powerToggle() async throws {}
+    func textSet(_ text: String) async throws -> String? { nil }
 }
 
 /// In-memory `AddressCaching` so tests never touch real UserDefaults.
@@ -170,6 +177,35 @@ struct CompanionRemoteControllerTests {
         try await controller.send(.select)
         #expect(await fake.connectCount == 1) // no reconnect
         #expect(await fake.calls == ["homeHold", "select"])
+    }
+
+    @Test("Text that fails on a dropped session reconnects and retries once")
+    func sendTextRetriesAfterDrop() async throws {
+        let fake = FakeCompanionClient(dispatchFailures: 1)
+        let controller = CompanionRemoteController(
+            device: validDevice(), resolver: FakeResolver(),
+            addressCache: MemoryAddressCache(),
+            makeClient: { _, _, _ in fake })
+
+        try await controller.sendText("star wars")
+
+        #expect(await fake.connectCount == 2)
+        #expect(await fake.calls == ["text:star wars", "text:star wars"])
+    }
+
+    @Test("Text with no focused field on the TV throws without reconnecting")
+    func sendTextWithoutFocusedField() async throws {
+        let fake = FakeCompanionClient(textFieldFocused: false)
+        let controller = CompanionRemoteController(
+            device: validDevice(), resolver: FakeResolver(),
+            addressCache: MemoryAddressCache(),
+            makeClient: { _, _, _ in fake })
+
+        await #expect(throws: ControllerError.noFocusedTextField) {
+            try await controller.sendText("hello")
+        }
+        #expect(await fake.connectCount == 1)
+        #expect(controller.lastError == nil)
     }
 
     @Test("Two concurrent sends while disconnected coalesce into one connect")
