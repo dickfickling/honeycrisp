@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Clickpad: dark ring with a center select button. -->
+  <circle cx="512" cy="300" r="118" fill="#1D1E22"/>
+  <circle cx="512" cy="300" r="46" fill="#34363C"/>
+  <!-- Back and TV buttons. -->
+  <circle cx="450" cy="508" r="40" fill="#1D1E22"/>
+  <circle cx="574" cy="508" r="40" fill="#1D1E22"/>
+  <!-- Play/pause, and the volume rocker. -->
+  <circle cx="450" cy="614" r="40" fill="#1D1E22"/>
+  <rect x="534" y="574" width="80" height="186" rx="40" fill="#1D1E22"/>
+</svg>

@@ -69,18 +69,18 @@ cp "${BIN_PATH}" "${MACOS_DIR}/${APP_NAME}"
 # (pyatv, BigInt) travel with the distributed binary, not just the repo.
 cp THIRD-PARTY-LICENSES.md "${RESOURCES_DIR}/THIRD-PARTY-LICENSES.md"
 
-echo "==> Generating app icon"
-ICONSET_DIR="${DIST_DIR}/${APP_NAME}.iconset"
-mkdir -p "${ICONSET_DIR}"
-for size in 16 32 128 256 512; do
-    sips -z "${size}" "${size}" Assets/icon.png \
-        --out "${ICONSET_DIR}/icon_${size}x${size}.png" >/dev/null
-    double=$((size * 2))
-    sips -z "${double}" "${double}" Assets/icon.png \
-        --out "${ICONSET_DIR}/icon_${size}x${size}@2x.png" >/dev/null
-done
-iconutil -c icns "${ICONSET_DIR}" -o "${RESOURCES_DIR}/AppIcon.icns"
-rm -rf "${ICONSET_DIR}"
+echo "==> Compiling app icon"
+# Assets/AppIcon.icon is an Icon Composer document. actool compiles it to
+# Assets.car (read via CFBundleIconName on macOS 26+, which applies the
+# system shape and Liquid Glass; a plain .icns there gets a gray backing
+# plate) plus AppIcon.icns for older systems (CFBundleIconFile).
+xcrun actool Assets/AppIcon.icon \
+    --compile "${RESOURCES_DIR}" \
+    --platform macosx \
+    --minimum-deployment-target "${MIN_OS}" \
+    --app-icon AppIcon \
+    --output-partial-info-plist "${DIST_DIR}/icon-partial.plist" >/dev/null
+rm -f "${DIST_DIR}/icon-partial.plist"
 
 cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -96,6 +96,8 @@ cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIconName</key>
     <string>AppIcon</string>
     <key>CFBundleShortVersionString</key>
     <string>${VERSION}</string>
