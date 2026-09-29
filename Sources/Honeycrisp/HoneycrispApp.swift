@@ -9,18 +9,9 @@ struct HoneycrispApp: App {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
-        // Tray menu. The label view is hosted in the status bar for the app's
-        // whole lifetime, so it doubles as the place where the app delegate is
-        // wired up with an `openWindow` it can call on Cmd-Tab reactivation.
-        MenuBarExtra {
-            TrayMenu()
-                .environment(appState)
-        } label: {
-            Label("Honeycrisp", systemImage: "appletvremote.gen4.fill")
-                .task { appDelegate.openRemote = { showRemote(openWindow) } }
-        }
-
         // The remote itself: fixed 200x500, no title bar, draggable by background.
+        // First scene, so SwiftUI opens it at launch — its `.task` is what hands
+        // the app delegate (which owns the status item) `openWindow` and state.
         Window("Remote", id: WindowID.remote) {
             RemoteView()
                 .environment(appState)
@@ -32,9 +23,10 @@ struct HoneycrispApp: App {
                 // hidden-title-bar windows; keep it and its background out.
                 .toolbar(.hidden, for: .windowToolbar)
                 .hiddenWindowToolbarBackground()
-                // Belt-and-braces: also wire the delegate from here in case a
-                // menu-bar style ever stops hosting the label eagerly.
-                .task { appDelegate.openRemote = { showRemote(openWindow) } }
+                .task {
+                    appDelegate.appState = appState
+                    appDelegate.openWindow = openWindow
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
@@ -87,7 +79,12 @@ func showRemote(_ openWindow: OpenWindowAction) {
 
 // MARK: - App delegate
 
-/// Brings the remote back when the app is activated with nothing on screen.
+/// Owns the menu-bar status item, and brings the remote back when the app is
+/// activated with nothing on screen.
+///
+/// The status item is AppKit rather than a SwiftUI `MenuBarExtra` because
+/// `MenuBarExtra` cannot tell clicks apart: here a left click shows the remote
+/// and a right (or control) click opens the menu.
 ///
 /// With `LSUIElement` false the app lives in the Cmd-Tab switcher; switching to
 /// it only *activates* the app (no reopen event), so if every window was closed
@@ -95,9 +92,18 @@ func showRemote(_ openWindow: OpenWindowAction) {
 /// instead. Both paths reopen the remote window when no regular window exists.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    /// Opens the remote Window scene; wired up by `HoneycrispApp` via
-    /// `openWindow` (idempotent: opening an already-open `Window` fronts it).
-    var openRemote: (() -> Void)?
+    /// Wired up by `HoneycrispApp` once the remote window first appears.
+    var appState: AppState?
+    var openWindow: OpenWindowAction?
+
+    private var statusItem: NSStatusItem?
+
+    /// Opens the remote Window scene (idempotent: opening an already-open
+    /// `Window` fronts it).
+    private func openRemote() {
+        guard let openWindow else { return }
+        showRemote(openWindow)
+    }
 
     /// `true` when some user-facing window is open or minimized. The menu bar
     /// extra's status item is backed by an always-visible window, so filter to
@@ -106,55 +112,94 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.windows.contains { $0.canBecomeKey && ($0.isVisible || $0.isMiniaturized) }
     }
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        item.button?.image = NSImage(
+            systemSymbolName: "appletvremote.gen4.fill", accessibilityDescription: "Honeycrisp")
+        item.button?.target = self
+        item.button?.action = #selector(statusItemClicked)
+        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        statusItem = item
+    }
+
     func applicationShouldHandleReopen(
         _ sender: NSApplication, hasVisibleWindows flag: Bool
     ) -> Bool {
-        if !hasUserWindow { openRemote?() }
+        if !hasUserWindow { openRemote() }
         return true
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        if !hasUserWindow { openRemote?() }
+        if !hasUserWindow { openRemote() }
     }
-}
 
-// MARK: - Tray menu
+    // MARK: Status item
 
-private struct TrayMenu: View {
-    @Environment(AppState.self) private var appState
-    @Environment(\.openWindow) private var openWindow
+    @objc private func statusItemClicked() {
+        let event = NSApp.currentEvent
+        let wantsMenu = event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true
+        guard wantsMenu else {
+            openRemote()
+            return
+        }
+        // Attach the menu just for this click: while `menu` is set, AppKit
+        // opens it on every click and the action above never fires.
+        statusItem?.menu = makeMenu()
+        statusItem?.button?.performClick(nil)
+        statusItem?.menu = nil
+    }
 
-    var body: some View {
-        Button("Show Remote") { showRemote(openWindow) }
+    /// Built fresh on each right click so the device list is current.
+    private func makeMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(menuItem("Show Remote", #selector(showRemoteClicked)))
+        menu.addItem(.separator())
 
-        Divider()
-
-        if appState.devices.isEmpty {
-            Text("No devices")
+        let devices = appState?.devices ?? []
+        if devices.isEmpty {
+            let empty = NSMenuItem(title: "No devices", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
         } else {
             // Radio-style device picker: checkmark marks the active device.
-            ForEach(appState.devices) { device in
-                Button {
-                    appState.setActiveDevice(device.id)
-                } label: {
-                    if device.id == appState.activeDeviceID {
-                        Label(device.name, systemImage: "checkmark")
-                    } else {
-                        Text(device.name)
-                    }
-                }
+            for device in devices {
+                let item = menuItem(device.name, #selector(deviceClicked(_:)))
+                item.representedObject = device.id
+                item.state = device.id == appState?.activeDeviceID ? .on : .off
+                menu.addItem(item)
             }
         }
 
-        Divider()
+        menu.addItem(.separator())
+        menu.addItem(menuItem("Add Device…", #selector(addDeviceClicked)))
+        menu.addItem(menuItem("Manage Devices…", #selector(manageDevicesClicked)))
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(
+            title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        return menu
+    }
 
-        Button("Add Device…") { openWindow(id: WindowID.addDevice) }
-        Button("Manage Devices…") { openWindow(id: WindowID.manageDevices) }
+    private func menuItem(_ title: String, _ action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        return item
+    }
 
-        Divider()
+    @objc private func showRemoteClicked() { openRemote() }
 
-        Button("Quit") { NSApplication.shared.terminate(nil) }
-            .keyboardShortcut("q")
+    @objc private func deviceClicked(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        appState?.setActiveDevice(id)
+    }
+
+    @objc private func addDeviceClicked() {
+        NSApp.activate(ignoringOtherApps: true)
+        openWindow?(id: WindowID.addDevice)
+    }
+
+    @objc private func manageDevicesClicked() {
+        NSApp.activate(ignoringOtherApps: true)
+        openWindow?(id: WindowID.manageDevices)
     }
 }
 
