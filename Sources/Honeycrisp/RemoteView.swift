@@ -99,6 +99,15 @@ struct RemoteView: View {
         // Include `.repeat` so holding a key (arrows, volume) repeats the
         // command via the OS key-repeat stream, not just once on key-down.
         .onKeyPress(phases: [.down, .repeat]) { press in handleKey(press) }
+        // Follow the TV: pop the text box open when a text field there gains
+        // focus, and close it when the field goes away.
+        .onChange(of: appState.remote?.textFieldFocused ?? false) { _, tvFocused in
+            if tvFocused {
+                openKeyboard()
+            } else {
+                closeKeyboard()
+            }
+        }
     }
 
     private var header: some View {

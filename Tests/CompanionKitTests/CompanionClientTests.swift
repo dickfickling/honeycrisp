@@ -294,7 +294,10 @@ struct CompanionClientTests {
             textInputData: try focusedFieldArchive(text: "old"),
             recorder: recorder)
         await driver.startLoop()
+        var focusStates = client.textFocusStates.makeAsyncIterator()
         try await client.connect()
+        // The connect-time `_tiStart` reports the already-focused field.
+        #expect(await focusStates.next() == true)
 
         let first = try await client.textSet("héllo 🍎")
         let second = try await client.textSet("again")
@@ -306,7 +309,8 @@ struct CompanionClientTests {
         #expect(second == "again")
         let textMessages = recorder.requests.filter { $0["_i"]?.asString?.hasPrefix("_ti") == true }
         #expect(textMessages.map { $0["_i"]?.asString } == [
-            "_tiStart", "_tiC", "_tiC",
+            "_tiStart",
+            "_tiStop", "_tiStart", "_tiC", "_tiC",
             "_tiStop", "_tiStart", "_tiC", "_tiC",
         ])
 
@@ -351,6 +355,37 @@ struct CompanionClientTests {
 
         #expect(result == nil)
         #expect(!recorder.requests.contains { $0["_i"]?.asString == "_tiC" })
+
+        await client.disconnect()
+        await driver.stop()
+    }
+
+    @Test func pushedFocusEventsUpdateTextFocusStates() async throws {
+        let credentials = try mintCredentials()
+        let recorder = Recorder()
+        let (client, driver) = makeClient(credentials: credentials, recorder: recorder)
+        await driver.startLoop()
+        var focusStates = client.textFocusStates.makeAsyncIterator()
+        try await client.connect()
+
+        // Wait for the connect-time `_tiStart` (unfocused, so nothing yields)
+        // so its reply cannot land after the events below.
+        while !recorder.requests.contains(where: { $0["_i"]?.asString == "_tiStart" }) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        try await client.refreshPowerState()
+
+        let tiD = try focusedFieldArchive(text: "")
+        await driver.emit(.eOPACK, pairs: [
+            ("_i", .string("_tiStarted")), ("_t", .int(1)),
+            ("_c", .dictionary([(.string("_tiD"), .data(tiD))])),
+        ])
+        #expect(await focusStates.next() == true)
+
+        await driver.emit(.eOPACK, pairs: [
+            ("_i", .string("_tiStopped")), ("_t", .int(1)), ("_c", .dictionary([])),
+        ])
+        #expect(await focusStates.next() == false)
 
         await client.disconnect()
         await driver.stop()

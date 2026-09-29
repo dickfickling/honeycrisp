@@ -53,13 +53,21 @@ public actor CompanionClient {
     /// Whether a `_tiStart` text-input session is open (so `_tiStop` has
     /// something to stop).
     private var textInputStarted = false
+    private var textFocused = false
 
     private let stateStream: AsyncStream<ConnectionState>
     private let stateContinuation: AsyncStream<ConnectionState>.Continuation
+    private let focusStream: AsyncStream<Bool>
+    private let focusContinuation: AsyncStream<Bool>.Continuation
 
     /// Stream of connection-state transitions. Replays nothing on subscribe;
     /// read `state` for the current value.
     public nonisolated var connectionStates: AsyncStream<ConnectionState> { stateStream }
+
+    /// Stream of text-field focus changes on the TV: `true` when a text field
+    /// (e.g. a search box) gains focus, `false` when it loses it. Only
+    /// changes are yielded.
+    public nonisolated var textFocusStates: AsyncStream<Bool> { focusStream }
 
     public init(
         host: String,
@@ -77,6 +85,8 @@ public actor CompanionClient {
         self.holdDuration = holdDuration
         (self.stateStream, self.stateContinuation) =
             AsyncStream.makeStream(of: ConnectionState.self)
+        (self.focusStream, self.focusContinuation) =
+            AsyncStream.makeStream(of: Bool.self)
     }
 
     // MARK: - Lifecycle
@@ -111,6 +121,9 @@ public actor CompanionClient {
         // here would add that request's full timeout to every connect (and to
         // every button press coalesced behind the connect) on such devices.
         Task { await self.initializePower(proto) }
+        // Likewise best-effort: the text session makes the TV push focus
+        // events, and its reply says whether a field is focused right now.
+        Task { await self.initializeTextInput(proto) }
     }
 
     /// Tear down the session and close the connection.
@@ -149,6 +162,7 @@ public actor CompanionClient {
         self.proto = nil
         _powerState = .unknown
         textInputStarted = false
+        textFocused = false
         setState(.disconnected)
     }
 
@@ -248,6 +262,30 @@ public actor CompanionClient {
         try await textInputCommand(text, clearPreviousInput: true)
     }
 
+    /// Open the text-input session so the TV pushes `_tiStarted` /
+    /// `_tiStopped` focus events (pyatv `CompanionKeyboard`, which starts the
+    /// session at connect for the same reason).
+    private func initializeTextInput(_ proto: CompanionProtocolLayer) async {
+        for event in ["_tiStarted", "_tiStopped"] {
+            await proto.onEvent(event) { [weak self] content in
+                let focused = content["_tiD"] != nil
+                Task { await self?.setTextFocused(focused) }
+            }
+        }
+        guard !textInputStarted,
+              let response = try? await proto.sendAndWait(identifier: "_tiStart")
+        else { return }
+        textInputStarted = true
+        setTextFocused(response["_c"]?.asStringDictionary?["_tiD"] != nil)
+    }
+
+    /// pyatv's rule for all three messages: focused iff `_tiD` is present.
+    private func setTextFocused(_ focused: Bool) {
+        guard textFocused != focused else { return }
+        textFocused = focused
+        focusContinuation.yield(focused)
+    }
+
     /// Port of pyatv `CompanionAPI.text_input_command`.
     private func textInputCommand(_ text: String, clearPreviousInput: Bool) async throws -> String? {
         let proto = try requireProto()
@@ -263,9 +301,9 @@ public actor CompanionClient {
         let response = try await proto.sendAndWait(identifier: "_tiStart")
         textInputStarted = true
 
-        guard let tiData = response["_c"]?.asStringDictionary?["_tiD"]?.asData else {
-            return nil
-        }
+        let tiData = response["_c"]?.asStringDictionary?["_tiD"]?.asData
+        setTextFocused(tiData != nil)
+        guard let tiData else { return nil }
         let properties = try RTIArchive.readProperties(tiData, [
             ["sessionUUID"],
             ["documentState", "docSt", "contextBeforeInput"],

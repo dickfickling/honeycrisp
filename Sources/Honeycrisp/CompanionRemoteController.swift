@@ -13,6 +13,8 @@ import os
 public protocol CompanionControlling: Sendable {
     /// Stream of the underlying client's connection-state transitions.
     nonisolated var connectionStates: AsyncStream<CompanionClient.ConnectionState> { get }
+    /// Stream of TV text-field focus changes.
+    nonisolated var textFocusStates: AsyncStream<Bool> { get }
     func connect() async throws
     func disconnect() async
     func up() async throws
@@ -40,6 +42,9 @@ public struct LiveCompanionClient: CompanionControlling {
 
     public nonisolated var connectionStates: AsyncStream<CompanionClient.ConnectionState> {
         client.connectionStates
+    }
+    public nonisolated var textFocusStates: AsyncStream<Bool> {
+        client.textFocusStates
     }
     public func connect() async throws { try await client.connect() }
     public func disconnect() async { await client.disconnect() }
@@ -166,6 +171,7 @@ public enum ControllerError: Error, Equatable, Sendable, LocalizedError {
 public final class CompanionRemoteController: RemoteControlling {
     public private(set) var connectionState: ConnectionState = .disconnected
     public private(set) var lastError: String?
+    public private(set) var textFieldFocused = false
 
     @ObservationIgnored private let device: StoredDevice
     @ObservationIgnored private let resolver: any DeviceResolving
@@ -364,12 +370,23 @@ public final class CompanionRemoteController: RemoteControlling {
         }
     }
 
-    /// Subscribe to a client's connection-state stream and mirror it into the
-    /// observable `connectionState` (drives the UI, and catches later drops).
+    /// Subscribe to a client's connection-state and text-focus streams and
+    /// mirror them into the observable `connectionState` (drives the UI, and
+    /// catches later drops) and `textFieldFocused`.
     private func startMirroring(_ client: any CompanionControlling) {
         mirrorTask?.cancel()
         let states = client.connectionStates
+        let focusStates = client.textFocusStates
         mirrorTask = Task { [weak self] in
+            // Lives exactly as long as the connection-state loop below, so
+            // cancelling `mirrorTask` stops both.
+            let focusTask = Task { [weak self] in
+                for await focused in focusStates {
+                    self?.logger.info("TV text field focused: \(focused, privacy: .public)")
+                    self?.textFieldFocused = focused
+                }
+            }
+            defer { focusTask.cancel() }
             for await state in states {
                 self?.connectionState = Self.map(state)
             }

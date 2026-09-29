@@ -41,6 +41,8 @@ public protocol RemoteControlling: AnyObject {
     /// Human-readable description of the most recent failure, for a status
     /// tooltip. `nil` when there is nothing to report.
     var lastError: String? { get }
+    /// Whether a text field (e.g. a search box) is focused on the TV.
+    var textFieldFocused: Bool { get }
     func send(_ command: RemoteCommand) async throws
     /// Replace the text in the TV's focused text field (e.g. a search box).
     func sendText(_ text: String) async throws
@@ -55,6 +57,7 @@ public protocol RemoteControlling: AnyObject {
 
 public extension RemoteControlling {
     var lastError: String? { nil }
+    var textFieldFocused: Bool { false }
     func connect() async throws {}
     func teardown() async {}
 }

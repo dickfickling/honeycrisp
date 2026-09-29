@@ -13,6 +13,8 @@ private enum TestError: Error { case commandFailed }
 private actor FakeCompanionClient: CompanionControlling {
     nonisolated let connectionStates: AsyncStream<CompanionClient.ConnectionState>
     private nonisolated let continuation: AsyncStream<CompanionClient.ConnectionState>.Continuation
+    nonisolated let textFocusStates: AsyncStream<Bool>
+    private nonisolated let focusContinuation: AsyncStream<Bool>.Continuation
 
     private(set) var calls: [String] = []
     private(set) var connectCount = 0
@@ -25,6 +27,7 @@ private actor FakeCompanionClient: CompanionControlling {
     init(dispatchFailures: Int = 0, holdConnect: Bool = false, textFieldFocused: Bool = true) {
         (connectionStates, continuation) =
             AsyncStream.makeStream(of: CompanionClient.ConnectionState.self)
+        (textFocusStates, focusContinuation) = AsyncStream.makeStream(of: Bool.self)
         self.dispatchFailures = dispatchFailures
         self.holdConnect = holdConnect
         self.textFieldFocused = textFieldFocused
@@ -32,6 +35,10 @@ private actor FakeCompanionClient: CompanionControlling {
 
     nonisolated func emit(_ state: CompanionClient.ConnectionState) {
         continuation.yield(state)
+    }
+
+    nonisolated func emitTextFocus(_ focused: Bool) {
+        focusContinuation.yield(focused)
     }
 
     /// Resume any `connect()` calls parked by `holdConnect`.
@@ -97,6 +104,7 @@ private final class Counter: @unchecked Sendable {
 private actor FailingConnectClient: CompanionControlling {
     nonisolated let connectionStates: AsyncStream<CompanionClient.ConnectionState>
     private nonisolated let continuation: AsyncStream<CompanionClient.ConnectionState>.Continuation
+    nonisolated let textFocusStates = AsyncStream<Bool> { $0.finish() }
 
     init() {
         (connectionStates, continuation) =
@@ -206,6 +214,25 @@ struct CompanionRemoteControllerTests {
         }
         #expect(await fake.connectCount == 1)
         #expect(controller.lastError == nil)
+    }
+
+    @Test("TV text-field focus changes are mirrored into textFieldFocused")
+    func mirrorsTextFocus() async throws {
+        let fake = FakeCompanionClient()
+        let controller = CompanionRemoteController(
+            device: validDevice(), resolver: FakeResolver(),
+            addressCache: MemoryAddressCache(),
+            makeClient: { _, _, _ in fake })
+        try await controller.connect()
+        #expect(controller.textFieldFocused == false)
+
+        fake.emitTextFocus(true)
+        await waitUntil { controller.textFieldFocused }
+        #expect(controller.textFieldFocused == true)
+
+        fake.emitTextFocus(false)
+        await waitUntil { !controller.textFieldFocused }
+        #expect(controller.textFieldFocused == false)
     }
 
     @Test("Two concurrent sends while disconnected coalesce into one connect")
