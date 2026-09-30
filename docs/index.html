@@ -44,7 +44,7 @@
 
   header.hero {
     text-align: center;
-    padding: 72px 0 40px;
+    padding-block: 72px 40px;
   }
   .hero img.icon { width: 128px; height: 128px; }
   .hero h1 {
@@ -84,19 +84,20 @@
     align-items: flex-start;
     gap: 32px;
     flex-wrap: wrap;
-    padding: 32px 0 56px;
+    padding-block: 32px 64px;
   }
   figure { margin: 0; text-align: center; }
   figure img {
     display: block;
     height: auto;
-    border-radius: 14px;
-    box-shadow: 0 24px 48px -20px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.06);
+    /* The screenshot carries its own transparent rounded corners; drop-shadow
+       follows that alpha shape, where border-radius + box-shadow would not. */
+    filter: drop-shadow(0 18px 28px rgba(0, 0, 0, 0.28));
   }
   figure.remote img { width: 200px; }
   figcaption { margin-top: 14px; font-size: 14px; color: var(--muted); max-width: 240px; margin-left: auto; margin-right: auto; }
 
-  section { padding: 48px 0; border-top: 1px solid var(--border); }
+  section.wrap { padding-block: 64px; border-top: 1px solid var(--border); }
   section h2 { font-size: 28px; letter-spacing: -0.02em; margin: 0 0 24px; }
   .features {
     display: grid;
@@ -133,7 +134,7 @@
     padding: 1px 6px;
     border-radius: 5px;
   }
-  footer { padding: 32px 0 48px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
+  footer.wrap { padding-block: 32px 48px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
 </style>
 </head>
 <body>
