@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Honeycrisp — Apple TV remote for your Mac</title>
+<meta name="description" content="A native macOS menu bar remote for Apple TV. Pure Swift, no setup beyond pairing.">
+<link rel="icon" type="image/png" href="img/icon.png">
+<meta property="og:title" content="Honeycrisp">
+<meta property="og:description" content="A native macOS menu bar remote for Apple TV.">
+<meta property="og:image" content="img/icon.png">
+<style>
+  :root {
+    --bg: #fbf8f5;
+    --surface: #ffffff;
+    --text: #1d1b1a;
+    --muted: #6b645f;
+    --border: #ebe4de;
+    --accent: #ef4a3c;
+    --accent-2: #f6a53a;
+    --kbd-bg: #f2ede8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141211;
+      --surface: #1e1b19;
+      --text: #f3eeea;
+      --muted: #a39a93;
+      --border: #2e2a27;
+      --kbd-bg: #2a2623;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+
+  header.hero {
+    text-align: center;
+    padding: 72px 0 40px;
+  }
+  .hero img.icon { width: 128px; height: 128px; }
+  .hero h1 {
+    font-size: clamp(40px, 7vw, 64px);
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+    margin: 12px 0 8px;
+  }
+  .hero p.tag {
+    font-size: clamp(18px, 2.4vw, 22px);
+    color: var(--muted);
+    max-width: 560px;
+    margin: 0 auto 28px;
+  }
+  .cta { display: inline-flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .btn {
+    display: inline-block;
+    padding: 12px 22px;
+    border-radius: 999px;
+    font-weight: 600;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    color: var(--text);
+    background: var(--surface);
+  }
+  .btn.primary {
+    border: 0;
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 6px 20px -8px rgba(239, 74, 60, 0.6);
+  }
+  .req { margin-top: 14px; font-size: 14px; color: var(--muted); }
+
+  .shots {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 32px;
+    flex-wrap: wrap;
+    padding: 32px 0 56px;
+  }
+  figure { margin: 0; text-align: center; }
+  figure img {
+    display: block;
+    height: auto;
+    border-radius: 14px;
+    box-shadow: 0 24px 48px -20px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  }
+  figure.remote img { width: 200px; }
+  figure.pair img { width: 340px; max-width: 100%; }
+  figcaption { margin-top: 14px; font-size: 14px; color: var(--muted); max-width: 240px; margin-left: auto; margin-right: auto; }
+  figure.pair figcaption { max-width: 340px; }
+
+  section { padding: 48px 0; border-top: 1px solid var(--border); }
+  section h2 { font-size: 28px; letter-spacing: -0.02em; margin: 0 0 24px; }
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+  }
+  .feature {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+  }
+  .feature h3 { margin: 0 0 6px; font-size: 17px; }
+  .feature p { margin: 0; color: var(--muted); font-size: 15px; }
+
+  .keys { width: 100%; max-width: 520px; border-collapse: collapse; }
+  .keys td { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .keys td:first-child { width: 45%; }
+  kbd {
+    display: inline-block;
+    min-width: 28px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--kbd-bg);
+    border: 1px solid var(--border);
+    font: 600 14px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+    text-align: center;
+  }
+  ol.steps { padding-left: 20px; margin: 0; }
+  ol.steps li { margin-bottom: 8px; }
+  code {
+    font: 14px ui-monospace, "SF Mono", Menlo, monospace;
+    background: var(--kbd-bg);
+    padding: 1px 6px;
+    border-radius: 5px;
+  }
+  footer { padding: 32px 0 48px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+  <header class="hero wrap">
+    <img class="icon" src="img/icon.png" alt="Honeycrisp app icon">
+    <h1>Honeycrisp</h1>
+    <p class="tag">An Apple TV remote that lives in your Mac's menu bar. Click the icon, use your keyboard, get back to the couch.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/dickfickling/honeycrisp/releases/latest">Download for Mac</a>
+      <a class="btn" href="https://github.com/dickfickling/honeycrisp">View on GitHub</a>
+    </div>
+    <p class="req">Free and open source · macOS 14 or later · Apple silicon &amp; Intel</p>
+  </header>
+
+  <div class="wrap shots">
+    <figure class="remote">
+      <img src="img/remote.png" alt="The Honeycrisp remote window: d-pad, back, TV, play/pause and volume buttons" width="400" height="1056">
+      <figcaption>The remote. Laid out like the Siri Remote, always one click away.</figcaption>
+    </figure>
+    <figure class="remote">
+      <img src="img/remote-text.png" alt="The remote with a 'Type on TV' text field open above the d-pad" width="400" height="1056">
+      <figcaption>Type into search fields and passwords with a real keyboard.</figcaption>
+    </figure>
+    <figure class="pair">
+      <img src="img/add-device.png" alt="The Add Device window listing an Apple TV found on the network" width="680" height="696">
+      <figcaption>Apple TVs on your network show up automatically. Pair once with the on-screen PIN.</figcaption>
+    </figure>
+  </div>
+
+  <section class="wrap">
+    <h2>What it does</h2>
+    <div class="features">
+      <div class="feature">
+        <h3>Menu bar native</h3>
+        <p>Left-click the icon to show the remote. Right-click to switch devices, pair a new one, or quit.</p>
+      </div>
+      <div class="feature">
+        <h3>Keyboard first</h3>
+        <p>Arrow keys, return, and backspace do what you'd expect while the remote is in front.</p>
+      </div>
+      <div class="feature">
+        <h3>Text input</h3>
+        <p>When a text field on the TV gets focus, a text box pops open on your Mac. Type and it appears on screen.</p>
+      </div>
+      <div class="feature">
+        <h3>Pure Swift</h3>
+        <p>Speaks Apple's Companion protocol directly: pairing, encryption and discovery, no helper processes.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <h2>Keyboard shortcuts</h2>
+    <table class="keys">
+      <tr><td><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></td><td>Navigate</td></tr>
+      <tr><td><kbd>return</kbd> or <kbd>space</kbd></td><td>Select</td></tr>
+      <tr><td><kbd>delete</kbd></td><td>Back / Menu</td></tr>
+      <tr><td><kbd>h</kbd></td><td>Home (hold)</td></tr>
+      <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Volume down / up</td></tr>
+      <tr><td><kbd>k</kbd></td><td>Open the text box</td></tr>
+    </table>
+  </section>
+
+  <section class="wrap">
+    <h2>Get started</h2>
+    <ol class="steps">
+      <li><a href="https://github.com/dickfickling/honeycrisp/releases/latest">Download the latest release</a>, unzip it, and drag <strong>Honeycrisp</strong> to Applications.</li>
+      <li>Open it and allow local network access when macOS asks.</li>
+      <li>Pick your Apple TV in <strong>Add Device</strong> and enter the PIN shown on the TV.</li>
+    </ol>
+  </section>
+
+  <footer class="wrap">
+    MIT licensed. The Companion protocol implementation is a Swift port of
+    <a href="https://github.com/postlund/pyatv">pyatv</a> by Pierre Ståhl.
+    Not affiliated with Apple. Apple TV is a trademark of Apple Inc.
+  </footer>
+</body>
+</html>
